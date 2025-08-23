@@ -11,7 +11,7 @@ var GlobalApp fyne.App
 
 func main() {
 	// Create new Fyne application
-	GlobalApp = app.NewWithID("co.ispapp.agent_deployer")
+	GlobalApp = app.NewWithID("co.ispapp.psshclient")
 	// Create main UI with tabbed interface
 	mainUI := ui.NewMainUI(GlobalApp)
 

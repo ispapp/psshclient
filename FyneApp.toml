@@ -3,6 +3,6 @@ Website = "https://ispapp.co"
 [Details]
     Icon = "Icon.png"
     Name = "ISPApp Agent Deployer"
-    ID = "co.ispapp.agent_deployer"
+    ID = "co.ispapp.psshclient"
     Version = "1.0.0"
     Build = 1
