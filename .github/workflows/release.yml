@@ -31,13 +31,13 @@ jobs:
         run: make build-linux
 
       - name: Rename archive
-        run: mv bin/muscurdig.tar.xz bin/muscurdig_linux.tar.xz
+        run: mv bin/pssclient.tar.xz bin/pssclient_linux.tar.xz
 
       - name: Upload Linux Bin
         uses: djn24/add-asset-to-release@v1
         with:
           token: ${{secrets.GITHUB_TOKEN}}
-          path: 'bin/muscurdig_linux.tar.xz'
+          path: 'bin/pssclient_linux.tar.xz'
 
   publish-binaries-mac:
     timeout-minutes: 20
@@ -57,7 +57,7 @@ jobs:
         run: make build-mac
       
       - name: Zip App
-        run: zip -vr muscurdi_macos.zip bin/muscurdig.app -x "*.DS_Store" && mv muscurdi_macos.zip bin/
+        run: zip -vr muscurdi_macos.zip bin/pssclient.app -x "*.DS_Store" && mv muscurdi_macos.zip bin/
 
       - name: Upload MacOS Bin
         uses: djn24/add-asset-to-release@v1
@@ -89,10 +89,10 @@ jobs:
       
       - name: Zip Binary
         shell: pwsh
-        run: Compress-Archive "bin/muscurdig.exe" "muscurdig_win.zip" && mv muscurdig_win.zip bin/
+        run: Compress-Archive "bin/pssclient.exe" "pssclient_win.zip" && mv pssclient_win.zip bin/
 
       - name: Upload Win Bin
         uses: djn24/add-asset-to-release@v1
         with:
           token: ${{secrets.GITHUB_TOKEN}}
-          path: 'bin/muscurdig_win.zip'
+          path: 'bin/pssclient_win.zip'
