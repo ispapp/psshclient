@@ -68,8 +68,11 @@ func (tm *TerminalManager) CreateTerminalWidget(conn *SSHConnection, title strin
 	w := a.NewWindow(title)
 	w.Resize(fyne.NewSize(800, 600))
 
-	// Create terminal widget
-	t := terminal.New()
+	// Create terminal widget on UI thread
+	var t *terminal.Terminal
+	fyne.Do(func() {
+		t = terminal.New()
+	})
 
 	// Start the SSH shell session
 	go func() {
@@ -81,7 +84,11 @@ func (tm *TerminalManager) CreateTerminalWidget(conn *SSHConnection, title strin
 
 	// Connect terminal to SSH session
 	go func() {
-		defer a.Quit()
+		defer func() {
+			fyne.Do(func() {
+				a.Quit()
+			})
+		}()
 		err := t.RunWithConnection(stdinPipe, stdoutPipe)
 		if err != nil {
 			fmt.Printf("Terminal connection error: %v\n", err)
@@ -104,7 +111,7 @@ func (tm *TerminalManager) CreateTerminalWidget(conn *SSHConnection, title strin
 			}
 		}
 	}()
-	
+
 	// Add listener using fyne.Do to ensure it's called on the UI thread
 	fyne.Do(func() {
 		t.AddListener(configChan)
@@ -136,12 +143,16 @@ func (tm *TerminalManager) CreateTerminalWidget(conn *SSHConnection, title strin
 
 // ShowTerminal displays the terminal window
 func (tw *TerminalWidget) ShowTerminal() {
-	tw.Window.ShowAndRun()
+	fyne.Do(func() {
+		tw.Window.ShowAndRun()
+	})
 }
 
 // ShowTerminalWindow displays the terminal window without running (for multiple terminals)
 func (tw *TerminalWidget) ShowTerminalWindow() {
-	tw.Window.Show()
+	fyne.Do(func() {
+		tw.Window.Show()
+	})
 }
 
 // Close closes the terminal widget and SSH session
@@ -158,7 +169,9 @@ func (tw *TerminalWidget) Close() error {
 	}
 
 	if tw.Window != nil {
-		tw.Window.Close()
+		fyne.Do(func() {
+			tw.Window.Close()
+		})
 	}
 
 	if len(errs) > 0 {
@@ -264,8 +277,11 @@ func (tm *TerminalManager) MultiTerminalWindow(connections []*SSHConnection, tit
 			continue
 		}
 
-		// Create terminal
-		t := terminal.New()
+		// Create terminal on UI thread
+		var t *terminal.Terminal
+		fyne.Do(func() {
+			t = terminal.New()
+		})
 
 		// Start SSH shell
 		go func(s *ssh.Session, host string) {
@@ -299,7 +315,7 @@ func (tm *TerminalManager) MultiTerminalWindow(connections []*SSHConnection, tit
 				}
 			}
 		}(session, configChan, conn.Config.Host)
-		
+
 		// Add listener using fyne.Do to ensure UI thread safety
 		fyne.Do(func() {
 			t.AddListener(configChan)
@@ -320,18 +336,22 @@ func (tm *TerminalManager) MultiTerminalWindow(connections []*SSHConnection, tit
 		tm.terminals[conn.Config.Host] = termWidget
 		tm.mutex.Unlock()
 
-		// Add tab
+		// Add tab using fyne.Do for UI thread safety
 		tabTitle := fmt.Sprintf("%s (%s)", conn.Config.Host, conn.Config.Username)
-		tabs.Append(container.NewTabItem(tabTitle, t))
+		fyne.Do(func() {
+			tabs.Append(container.NewTabItem(tabTitle, t))
+		})
 	}
 
 	if len(tabs.Items) == 0 {
 		return fmt.Errorf("no successful terminal connections created")
 	}
 
-	// Set window content and show
-	w.SetContent(tabs)
-	w.ShowAndRun()
+	// Set window content and show using fyne.Do for UI thread safety
+	fyne.Do(func() {
+		w.SetContent(tabs)
+		w.ShowAndRun()
+	})
 
 	return nil
 }
@@ -525,8 +545,11 @@ func (tm *TerminalManager) NewSSHMultiTerminal(connections []*SSHConnection, tit
 	w.Resize(fyne.NewSize(1000, 700))
 
 	fmt.Printf("Creating terminal widget...\n")
-	// Create terminal widget
-	t := terminal.New()
+	// Create terminal widget on UI thread
+	var t *terminal.Terminal
+	fyne.Do(func() {
+		t = terminal.New()
+	})
 
 	fmt.Printf("Setting up multi-reader/writer...\n")
 	// Create multi-writer for stdin (distributes input to all sessions)
@@ -590,7 +613,9 @@ func (tm *TerminalManager) NewSSHMultiTerminal(connections []*SSHConnection, tit
 
 		defer func() {
 			fmt.Printf("Terminal connection ended, quitting app\n")
-			a.Quit()
+			fyne.Do(func() {
+				a.Quit()
+			})
 		}()
 		err := t.RunWithConnection(multiStdin, multiStdout)
 		if err != nil {
@@ -643,7 +668,11 @@ func (tm *TerminalManager) NewSSHMultiTerminal(connections []*SSHConnection, tit
 			}
 		}
 	}()
-	t.AddListener(configChan)
+
+	// Add listener using fyne.Do to ensure UI thread safety
+	fyne.Do(func() {
+		t.AddListener(configChan)
+	})
 
 	fmt.Printf("Creating SSH multi-terminal instance...\n")
 	// Create SSH multi-terminal instance
@@ -658,8 +687,10 @@ func (tm *TerminalManager) NewSSHMultiTerminal(connections []*SSHConnection, tit
 		mutex:          sync.RWMutex{},
 	}
 
-	// Set window content
-	w.SetContent(t)
+	// Set window content using fyne.Do for UI thread safety
+	fyne.Do(func() {
+		w.SetContent(t)
+	})
 
 	fmt.Printf("SSH multi-terminal created successfully with %d sessions\n", len(sessions))
 	return sshMultiTerm, nil
@@ -668,14 +699,18 @@ func (tm *TerminalManager) NewSSHMultiTerminal(connections []*SSHConnection, tit
 // ShowTerminal displays the SSH multi-terminal window
 func (smt *SSHMultiTerminal) ShowTerminal() {
 	fmt.Printf("ShowTerminal called - will block until window closes\n")
-	smt.window.ShowAndRun()
+	fyne.Do(func() {
+		smt.window.ShowAndRun()
+	})
 	fmt.Printf("ShowTerminal finished - window closed\n")
 }
 
 // ShowTerminalWindow displays the terminal window without running
 func (smt *SSHMultiTerminal) ShowTerminalWindow() {
 	fmt.Printf("ShowTerminalWindow called - non-blocking\n")
-	smt.window.Show()
+	fyne.Do(func() {
+		smt.window.Show()
+	})
 	fmt.Printf("ShowTerminalWindow finished - window should be visible\n")
 }
 
@@ -707,7 +742,9 @@ func (smt *SSHMultiTerminal) Close() error {
 
 	// Close window
 	if smt.window != nil {
-		smt.window.Close()
+		fyne.Do(func() {
+			smt.window.Close()
+		})
 	}
 
 	if len(errs) > 0 {
