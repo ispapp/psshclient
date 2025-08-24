@@ -43,10 +43,12 @@ func ShowSubnetScanDialog(parent fyne.Window) {
 
 // StartSubnetScan starts the subnet scanning process
 func StartSubnetScan(subnet string, parent fyne.Window) {
-	// Clear previous results
-	data.ClearDevices()
-	data.SetScanning(true)
-	data.SetScanProgress("Starting scan...")
+	// Clear previous results and set scanning state in main thread
+	fyne.Do(func() {
+		data.ClearDevices()
+		data.SetScanning(true)
+		data.SetScanProgress("Starting scan...")
+	})
 
 	// Create progress dialog
 	progressBar := widget.NewProgressBarInfinite()
@@ -70,7 +72,9 @@ func StartSubnetScan(subnet string, parent fyne.Window) {
 	// Handle cancel button
 	progressDialog.SetOnClosed(func() {
 		cancel()
-		data.SetScanning(false)
+		fyne.Do(func() {
+			data.SetScanning(false)
+		})
 	})
 
 	progressDialog.Show()
@@ -78,13 +82,20 @@ func StartSubnetScan(subnet string, parent fyne.Window) {
 	// Start scanning in goroutine
 	go func() {
 		defer func() {
-			data.SetScanning(false)
-			progressDialog.Hide()
+			fyne.Do(func() {
+				data.SetScanning(false)
+				if progressDialog != nil {
+					progressDialog.Hide()
+				}
+			})
 		}()
 
 		// Progress callback function
 		progressCallback := func(message string) {
-			data.SetScanProgress(message)
+			// Use fyne.Do to ensure UI updates happen in main thread
+			fyne.Do(func() {
+				data.SetScanProgress(message)
+			})
 		}
 
 		// Perform the scan
@@ -93,14 +104,18 @@ func StartSubnetScan(subnet string, parent fyne.Window) {
 		// Check if scan was cancelled
 		select {
 		case <-ctx.Done():
-			data.SetScanProgress("Scan cancelled")
+			fyne.Do(func() {
+				data.SetScanProgress("Scan cancelled")
+			})
 			return
 		default:
 		}
 
 		if err != nil {
-			data.SetScanProgress("Scan failed: " + err.Error())
-			dialog.ShowError(err, parent)
+			fyne.Do(func() {
+				data.SetScanProgress("Scan failed: " + err.Error())
+				dialog.ShowError(err, parent)
+			})
 			return
 		}
 
@@ -109,14 +124,18 @@ func StartSubnetScan(subnet string, parent fyne.Window) {
 			data.AddDevice(device)
 		}
 
-		data.SetScanProgress("Scan completed successfully")
+		fyne.Do(func() {
+			data.SetScanProgress("Scan completed successfully")
+		})
 
 		// Show completion dialog
 		go func() {
 			time.Sleep(1 * time.Second) // Show completion message briefly
-			dialog.ShowInformation("Scan Complete",
-				fmt.Sprintf("Found %d devices with SSH/Telnet ports open", len(devices)),
-				parent)
+			fyne.Do(func() {
+				dialog.ShowInformation("Scan Complete",
+					fmt.Sprintf("Found %d devices with SSH/Telnet ports open", len(devices)),
+					parent)
+			})
 		}()
 	}()
 }

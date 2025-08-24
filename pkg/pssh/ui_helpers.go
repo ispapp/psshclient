@@ -151,8 +151,6 @@ func ConnectToMultipleDevices(devices []string, credentials SSHCredentials, pare
 	// Close progress dialog after a short delay
 	go func() {
 		time.Sleep(1 * time.Second)
-		// Note: In a real implementation, you'd need to close the dialog here
-		// For now, we'll just update the status
 		progressDialog.Status.SetText(fmt.Sprintf("Completed: %d connected, %d failed", connected, failed))
 	}()
 
@@ -169,23 +167,47 @@ func OpenMultipleTerminals(connections []*SSHConnection, parentApp fyne.App) err
 		return fmt.Errorf("no connections provided")
 	}
 
+	// Create terminal manager
+	termManager := NewTerminalManager()
+
 	// Create title with device count
 	title := fmt.Sprintf("Multi-Device SSH Terminal (%d devices)", len(connections))
 
 	// Create multi-device terminal in main thread
-	var multiTerm *MultiDeviceTerminal
+	var multiTerm *SSHMultiTerminal
 	var err error
 
 	// Use Fyne's Do to ensure UI operations happen in main thread
 	fyne.Do(func() {
-		multiTerm, err = NewMultiDeviceTerminal(connections, title, parentApp)
+		multiTerm, err = termManager.NewSSHMultiTerminal(connections, title)
 		if err == nil {
-			multiTerm.Show()
+			multiTerm.ShowTerminalWindow()
 		}
 	})
 
 	if err != nil {
 		return fmt.Errorf("failed to create multi-device terminal: %v", err)
+	}
+
+	return nil
+}
+
+// OpenMultipleTabbedTerminals opens multiple terminals in a tabbed interface
+func OpenMultipleTabbedTerminals(connections []*SSHConnection) error {
+	if len(connections) == 0 {
+		return fmt.Errorf("no connections provided")
+	}
+
+	// Create terminal manager
+	termManager := NewTerminalManager()
+
+	// Create title with device count
+	title := fmt.Sprintf("SSH Terminals (%d devices)", len(connections))
+
+	// Create tabbed terminal window
+	err := termManager.MultiTerminalWindow(connections, title)
+	if err != nil {
+		return fmt.Errorf("failed to create tabbed terminal window: %v", err)
 	}
 
 	return nil
@@ -208,6 +230,25 @@ func CreateSSHMenuActions(selectedDevices []string, parent fyne.Window, app fyne
 
 				// Open multi-device terminal
 				err = OpenMultipleTerminals(connections, app)
+				if err != nil {
+					dialog.ShowError(err, parent)
+				}
+			})
+		}),
+		fyne.NewMenuItem("Open Tabbed SSH Terminals", func() {
+			ShowCredentialsDialog(parent, func(creds SSHCredentials, confirmed bool) {
+				if !confirmed {
+					return
+				}
+
+				connections, err := ConnectToMultipleDevices(selectedDevices, creds, parent)
+				if err != nil {
+					dialog.ShowError(err, parent)
+					return
+				}
+
+				// Open tabbed terminals
+				err = OpenMultipleTabbedTerminals(connections)
 				if err != nil {
 					dialog.ShowError(err, parent)
 				}

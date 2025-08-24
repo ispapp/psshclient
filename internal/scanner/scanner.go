@@ -11,11 +11,14 @@ import (
 
 // Device represents a discovered device
 type Device struct {
-	IP       string
-	Hostname string
-	Port22   bool
-	Port23   bool
-	Status   string
+	IP        string
+	Hostname  string
+	Port22    bool
+	Port23    bool
+	Status    string
+	Username  string // SSH username
+	Password  string // SSH password
+	Connected bool   // SSH connection status
 }
 
 // PortResult represents the structure that gomap returns for each port
