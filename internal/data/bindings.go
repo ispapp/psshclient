@@ -38,39 +38,8 @@ func Init() {
 
 	fmt.Printf("Data bindings initialized\n")
 
-	// For now, skip database initialization to avoid hanging
-	// TODO: Re-enable database once the hanging issue is resolved
-	fmt.Printf("Skipping database initialization for now\n")
-
-	/*
-		fmt.Printf("Starting database initialization...\n")
-
-		// Initialize database with timeout and error recovery
-		go func() {
-			fmt.Printf("Starting database initialization in goroutine...\n")
-
-			var err error
-			DB, err = database.New()
-			if err != nil {
-				log.Printf("Failed to initialize database: %v", err)
-				fmt.Printf("Database initialization failed, continuing without database\n")
-				// Continue without database - app should still work
-				return
-			}
-
-			fmt.Printf("Database initialized successfully\n")
-
-			// Load devices from database on startup
-			LoadDevicesFromDB()
-
-			// Clean up old devices (older than 30 days)
-			go func() {
-				if err := DB.DeleteOldDevices(30 * 24 * time.Hour); err != nil {
-					log.Printf("Failed to clean up old devices: %v", err)
-				}
-			}()
-		}()
-	*/
+	// Initialize database in the background to avoid blocking UI
+	go InitDatabase()
 
 	fmt.Printf("Data initialization completed\n")
 }

@@ -337,6 +337,7 @@ func validateCSVRecord(record []string, rowNum int) CSVDevice {
 		Hostname: ip, // Use IP as hostname initially
 		Username: username,
 		Password: password,
+		SSHPort:  port,
 		Status:   "Imported",
 	}
 

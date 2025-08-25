@@ -118,7 +118,7 @@ func openSSHTerminals(devices []string, useTabs bool, parent fyne.Window, app fy
 		}
 
 		// Open terminals
-		err = pssh.OpenMultipleTerminals(connections, app)
+		err = pssh.OpenMultipleTerminals(connections, parent)
 		if err != nil {
 			dialog.ShowError(err, parent)
 		}
