@@ -1,0 +1,326 @@
+package main
+
+import (
+	"fmt"
+	"io"
+	"log"
+	"sync"
+	"time"
+
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/app"
+	"fyne.io/fyne/v2/container"
+	"github.com/fyne-io/terminal"
+	"golang.org/x/crypto/ssh"
+)
+
+// multiWriter writes to multiple writers simultaneously
+type multiWriter struct {
+	writers []io.WriteCloser
+	mutex   sync.RWMutex
+}
+
+func (mw *multiWriter) Write(p []byte) (n int, err error) {
+	mw.mutex.RLock()
+	defer mw.mutex.RUnlock()
+
+	for _, w := range mw.writers {
+		if w != nil {
+			w.Write(p)
+		}
+	}
+	return len(p), nil
+}
+
+func (mw *multiWriter) Close() error {
+	mw.mutex.Lock()
+	defer mw.mutex.Unlock()
+
+	var errs []error
+	for _, w := range mw.writers {
+		if w != nil {
+			if err := w.Close(); err != nil {
+				errs = append(errs, err)
+			}
+		}
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("errors closing writers: %v", errs)
+	}
+	return nil
+}
+
+// multiReader reads from multiple readers and combines their output
+type multiReader struct {
+	readers []io.Reader
+	output  chan []byte
+	done    chan struct{}
+	mutex   sync.RWMutex
+}
+
+func newMultiReader(readers []io.Reader) *multiReader {
+	mr := &multiReader{
+		readers: readers,
+		output:  make(chan []byte, 100),
+		done:    make(chan struct{}),
+	}
+
+	// Start goroutines to read from each reader
+	for i, reader := range readers {
+		go func(r io.Reader, id int) {
+			buf := make([]byte, 1024)
+			for {
+				select {
+				case <-mr.done:
+					return
+				default:
+					n, err := r.Read(buf)
+					if n > 0 {
+						// Don't modify the output - just pass it through
+						// This prevents interference with terminal control sequences
+						mr.output <- buf[:n]
+					}
+					if err != nil {
+						if err != io.EOF {
+							fmt.Printf("Error reading from connection %d: %v\n", id+1, err)
+						}
+						return
+					}
+				}
+			}
+		}(reader, i)
+	}
+
+	return mr
+}
+
+func (mr *multiReader) Read(p []byte) (n int, err error) {
+	select {
+	case data := <-mr.output:
+		n = copy(p, data)
+		if n < len(data) {
+			// If buffer is too small, we lose data - could be improved
+			return n, nil
+		}
+		return n, nil
+	case <-mr.done:
+		return 0, io.EOF
+	}
+}
+
+func (mr *multiReader) Close() error {
+	mr.mutex.Lock()
+	defer mr.mutex.Unlock()
+
+	select {
+	case <-mr.done:
+		// Already closed
+	default:
+		close(mr.done)
+	}
+	return nil
+}
+
+func main() {
+	fmt.Println("Testing Multi-SSH terminal with stdin/stdout distribution...")
+
+	myApp := app.New()
+	myWindow := myApp.NewWindow("Multi-SSH Terminal Test")
+	myWindow.Resize(fyne.NewSize(1000, 700))
+
+	// Test SSH connection configurations
+	testConfigs := []struct {
+		host     string
+		port     string
+		user     string
+		password string
+	}{
+		{"192.168.1.135", "22", "admin", "admin"},
+		{"192.168.1.121", "22", "admin", "admin"},
+	}
+
+	var successfulConnections []struct {
+		client  *ssh.Client
+		session *ssh.Session
+		stdin   io.WriteCloser
+		stdout  io.Reader
+		host    string
+	}
+
+	// Try to connect to all hosts
+	for i, config := range testConfigs {
+		fmt.Printf("Attempt %d: Connecting to %s:%s with user '%s' and password '%s'...\n",
+			i+1, config.host, config.port, config.user, config.password)
+
+		// SSH Client Configuration
+		sshConfig := &ssh.ClientConfig{
+			User: config.user,
+			Auth: []ssh.AuthMethod{
+				ssh.Password(config.password),
+			},
+			HostKeyCallback: ssh.InsecureIgnoreHostKey(), // WARNING: Insecure for production!
+			Timeout:         5 * time.Second,
+		}
+
+		// Establish SSH connection
+		client, err := ssh.Dial("tcp", fmt.Sprintf("%s:%s", config.host, config.port), sshConfig)
+		if err != nil {
+			fmt.Printf("❌ FAILED to connect to %s: %v\n", config.host, err)
+			continue
+		}
+
+		// Create SSH session
+		session, err := client.NewSession()
+		if err != nil {
+			fmt.Printf("❌ FAILED to create session for %s: %v\n", config.host, err)
+			client.Close()
+			continue
+		}
+
+		// Get stdin and stdout pipes
+		stdinPipe, err := session.StdinPipe()
+		if err != nil {
+			fmt.Printf("❌ FAILED to get stdin pipe for %s: %v\n", config.host, err)
+			session.Close()
+			client.Close()
+			continue
+		}
+
+		stdoutPipe, err := session.StdoutPipe()
+		if err != nil {
+			fmt.Printf("❌ FAILED to get stdout pipe for %s: %v\n", config.host, err)
+			session.Close()
+			client.Close()
+			continue
+		}
+
+		// Request PTY and start shell on remote
+		modes := ssh.TerminalModes{
+			ssh.ECHO:          1,     // enable echoing
+			ssh.TTY_OP_ISPEED: 14400, // input speed = 14.4kbaud
+			ssh.TTY_OP_OSPEED: 14400, // output speed = 14.4kbaud
+		}
+		if err := session.RequestPty("xterm-256color", 80, 24, modes); err != nil {
+			fmt.Printf("❌ FAILED to request PTY for %s: %v\n", config.host, err)
+			session.Close()
+			client.Close()
+			continue
+		}
+
+		// Start the remote shell
+		if err := session.Start("$SHELL || /bin/sh"); err != nil {
+			fmt.Printf("❌ FAILED to start shell for %s: %v\n", config.host, err)
+			session.Close()
+			client.Close()
+			continue
+		}
+
+		fmt.Printf("✅ SUCCESS: Connected to %s\n", config.host)
+		successfulConnections = append(successfulConnections, struct {
+			client  *ssh.Client
+			session *ssh.Session
+			stdin   io.WriteCloser
+			stdout  io.Reader
+			host    string
+		}{
+			client:  client,
+			session: session,
+			stdin:   stdinPipe,
+			stdout:  stdoutPipe,
+			host:    config.host,
+		})
+	}
+
+	if len(successfulConnections) == 0 {
+		fmt.Println("\n🚨 No working SSH connections found.")
+		fmt.Println("✅ However, you can test the terminal with a local shell instead!")
+
+		// Create a simple test terminal without SSH
+		createLocalTerminal(myApp, myWindow)
+		return
+	}
+
+	fmt.Printf("✅ Successfully connected to %d hosts\n", len(successfulConnections))
+
+	// Set up cleanup
+	defer func() {
+		for _, conn := range successfulConnections {
+			conn.session.Close()
+			conn.client.Close()
+		}
+	}()
+
+	// Create multi-writer for stdin distribution
+	var stdinWriters []io.WriteCloser
+	var stdoutReaders []io.Reader
+
+	for _, conn := range successfulConnections {
+		stdinWriters = append(stdinWriters, conn.stdin)
+		stdoutReaders = append(stdoutReaders, conn.stdout)
+	}
+
+	multiStdin := &multiWriter{writers: stdinWriters}
+	multiStdout := newMultiReader(stdoutReaders)
+
+	// Create Fyne terminal widget
+	term := terminal.New()
+
+	// Run the Fyne terminal with the multi-connection setup
+	go func() {
+		if err := term.RunWithConnection(multiStdin, multiStdout); err != nil {
+			log.Printf("Terminal connection ended with error: %v", err)
+		}
+		myApp.Quit() // Quit application when terminal connection ends
+	}()
+
+	// Set up dynamic terminal resizing for all sessions
+	ch := make(chan terminal.Config)
+	go func() {
+		rows, cols := uint(0), uint(0)
+		for {
+			config := <-ch
+			if rows == config.Rows && cols == config.Columns {
+				continue
+			}
+			rows, cols = config.Rows, config.Columns
+
+			// Resize all sessions
+			for _, conn := range successfulConnections {
+				if err := conn.session.WindowChange(int(rows), int(cols)); err != nil {
+					log.Printf("Failed to send window change to %s: %v", conn.host, err)
+				}
+			}
+		}
+	}()
+	term.AddListener(ch)
+
+	// Set content and show window
+	myWindow.SetContent(container.NewStack(term))
+
+	fmt.Printf("✅ Multi-SSH Terminal created successfully with %d connections!\n", len(successfulConnections))
+	fmt.Println("🚀 Showing multi-SSH terminal window...")
+	fmt.Println("💡 Commands typed will be sent to ALL connected hosts!")
+	fmt.Println("💡 Output from all hosts will be combined cleanly without prefixes!")
+	if len(successfulConnections) > 1 {
+		fmt.Println("⚠️  Note: Output from multiple hosts will be mixed - use unique commands to identify sources")
+	}
+
+	myWindow.ShowAndRun()
+}
+
+func createLocalTerminal(myApp fyne.App, myWindow fyne.Window) {
+	fmt.Println("Creating local test terminal...")
+
+	// Create a simple terminal for local testing
+	term := terminal.New()
+
+	// Set content and show window
+	myWindow.SetContent(container.NewMax(term))
+	myWindow.SetTitle("Local Terminal Test - No SSH")
+
+	fmt.Println("🚀 Showing local test terminal...")
+	fmt.Println("💡 This is a basic terminal widget test")
+
+	myWindow.ShowAndRun()
+}
