@@ -5,6 +5,7 @@ import (
 	"ispappclient/internal/data"
 	"ispappclient/internal/scanner"
 	"ispappclient/pkg/pssh"
+	"strconv"
 	"sync"
 	"time"
 
@@ -24,7 +25,7 @@ func CreateDevicesTable() *fyne.Container {
 // CreateDevicesTableWithWindow creates a table widget with SSH functionality
 func CreateDevicesTableWithWindow(parentWindow fyne.Window, app fyne.App) *fyne.Container {
 	// Create table headers
-	headers := []string{"Select", "IP Address", "Hostname", "SSH", "Username", "Password", "Status", "Actions"}
+	headers := []string{"Select", "IP Address", "Hostname", "SSH", "SSH Port", "Username", "Password", "Status", "Actions"}
 
 	// Track selected devices and SSH manager
 	selectedDevices := make(map[int]bool)
@@ -85,15 +86,24 @@ func CreateDevicesTableWithWindow(parentWindow fyne.Window, app fyne.App) *fyne.
 								} else {
 									label.SetText("✗ Closed")
 								}
+							case 4: // SSH Port
+								if device.Port22 {
+									if device.SSHPort == 0 {
+										device.SSHPort = 22 // Default to 22 if not set
+									}
+									label.SetText(fmt.Sprintf("%d", device.SSHPort))
+								} else {
+									label.SetText("-")
+								}
 
-							case 4: // Username
+							case 5: // Username
 								if device.Port22 {
 									label.SetText(device.Username)
 								} else {
 									label.SetText("-")
 								}
 
-							case 5: // Password
+							case 6: // Password
 								if device.Port22 {
 									if device.Password != "" {
 										label.SetText("●●●●●●")
@@ -104,10 +114,10 @@ func CreateDevicesTableWithWindow(parentWindow fyne.Window, app fyne.App) *fyne.
 									label.SetText("-")
 								}
 
-							case 6: // Overall Status
+							case 7: // Overall Status
 								label.SetText(device.Status)
 
-							case 7: // Actions
+							case 8: // Actions
 								if device.Port22 {
 									if device.Connected {
 										label.SetText("🔌 Disconnect")
@@ -135,7 +145,15 @@ func CreateDevicesTableWithWindow(parentWindow fyne.Window, app fyne.App) *fyne.
 				selectedDevices[deviceIndex] = !selectedDevices[deviceIndex]
 				selectionMutex.Unlock()
 				table.Refresh()
-			case 4: // Username column - show entry dialog
+			case 4: // SSH Port column - show entry dialog
+				if deviceIndex < data.DeviceList.Length() {
+					if deviceObj, err := data.DeviceList.GetValue(deviceIndex); err == nil {
+						if device, ok := deviceObj.(scanner.Device); ok && device.Port22 {
+							showSSHPortDialog(deviceIndex, device.SSHPort, parentWindow, table)
+						}
+					}
+				}
+			case 5: // Username column - show entry dialog
 				if deviceIndex < data.DeviceList.Length() {
 					if deviceObj, err := data.DeviceList.GetValue(deviceIndex); err == nil {
 						if device, ok := deviceObj.(scanner.Device); ok && device.Port22 {
@@ -143,7 +161,7 @@ func CreateDevicesTableWithWindow(parentWindow fyne.Window, app fyne.App) *fyne.
 						}
 					}
 				}
-			case 5: // Password column - show entry dialog
+			case 6: // Password column - show entry dialog
 				if deviceIndex < data.DeviceList.Length() {
 					if deviceObj, err := data.DeviceList.GetValue(deviceIndex); err == nil {
 						if device, ok := deviceObj.(scanner.Device); ok && device.Port22 {
@@ -151,7 +169,7 @@ func CreateDevicesTableWithWindow(parentWindow fyne.Window, app fyne.App) *fyne.
 						}
 					}
 				}
-			case 7: // Actions column - connect/disconnect
+			case 8: // Actions column - connect/disconnect
 				if deviceIndex < data.DeviceList.Length() {
 					if deviceObj, err := data.DeviceList.GetValue(deviceIndex); err == nil {
 						if device, ok := deviceObj.(scanner.Device); ok && device.Port22 {
@@ -168,10 +186,11 @@ func CreateDevicesTableWithWindow(parentWindow fyne.Window, app fyne.App) *fyne.
 	table.SetColumnWidth(1, 120) // IP Address
 	table.SetColumnWidth(2, 150) // Hostname
 	table.SetColumnWidth(3, 100) // SSH Status
-	table.SetColumnWidth(4, 100) // Username
-	table.SetColumnWidth(5, 100) // Password
-	table.SetColumnWidth(6, 80)  // Status
-	table.SetColumnWidth(7, 100) // Actions
+	table.SetColumnWidth(4, 80)  // SSH Port
+	table.SetColumnWidth(5, 100) // Username
+	table.SetColumnWidth(6, 100) // Password
+	table.SetColumnWidth(7, 80)  // Status
+	table.SetColumnWidth(8, 100) // Actions
 
 	// Listen for changes to the device list
 	data.DeviceList.AddListener(binding.NewDataListener(func() {
@@ -413,6 +432,23 @@ func showUsernameDialog(deviceIndex int, currentUsername string, parent fyne.Win
 	}, parent)
 }
 
+// showSSHPortDialog shows a dialog to enter the SSH port for a device
+func showSSHPortDialog(deviceIndex int, currentPort int, parent fyne.Window, table *widget.Table) {
+	entry := widget.NewEntry()
+	if currentPort == 0 {
+		currentPort = 22 // Default to 22
+	}
+	entry.SetText(fmt.Sprintf("%d", currentPort))
+	entry.SetPlaceHolder("Enter SSH port")
+
+	dialog.ShowCustomConfirm("Enter SSH Port", "OK", "Cancel", entry, func(confirmed bool) {
+		if confirmed {
+			updateDeviceField(deviceIndex, "sshport", entry.Text)
+			table.Refresh()
+		}
+	}, parent)
+}
+
 // showPasswordDialog shows a dialog to enter password for a device
 func showPasswordDialog(deviceIndex int, currentPassword string, parent fyne.Window, table *widget.Table) {
 	entry := widget.NewPasswordEntry()
@@ -439,6 +475,11 @@ func updateDeviceField(deviceIndex int, field, value string) {
 				case "password":
 					device.Password = value
 					data.UpdateDevice(deviceIndex, device)
+				case "sshport":
+					if port, err := strconv.Atoi(value); err == nil {
+						device.SSHPort = port
+						data.UpdateDevice(deviceIndex, device)
+					}
 				}
 			}
 		}
@@ -473,9 +514,14 @@ func connectToDevice(deviceIndex int, sshManager *pssh.SSHManager, parentWindow 
 						return
 					}
 
+					sshPort := device.SSHPort
+					if sshPort == 0 {
+						sshPort = 22 // Default to 22 if not set
+					}
+
 					config := pssh.ConnectionConfig{
 						Host:     device.IP,
-						Port:     22,
+						Port:     sshPort,
 						Username: device.Username,
 						Password: device.Password,
 						Timeout:  30 * time.Second,

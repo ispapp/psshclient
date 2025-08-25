@@ -15,6 +15,7 @@ type Device struct {
 	Hostname  string
 	Port22    bool
 	Port23    bool
+	SSHPort   int // SSH port
 	Status    string
 	Username  string // SSH username
 	Password  string // SSH password
@@ -116,7 +117,17 @@ func ScanSubnet(ctx context.Context, subnet string, progressCallback func(string
 			// Check which ports are open (SSH=22, Telnet=23)
 			hasSSHOrTelnet := false
 			for _, portResult := range result.Results {
-				// Check if port is open and if it's SSH (22) or Telnet (23)
+				if portResult.State {
+					if portResult.Port == 22 {
+						device.Port22 = true
+						device.SSHPort = 22 // Default SSH port
+						hasSSHOrTelnet = true
+					}
+					if portResult.Port == 23 {
+						device.Port23 = true
+						hasSSHOrTelnet = true
+					}
+				}
 				if portResult.State {
 					if portResult.Port == 22 {
 						device.Port22 = true

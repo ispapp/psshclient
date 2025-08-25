@@ -81,6 +81,7 @@ func (db *DB) initSchema() error {
 		hostname TEXT NOT NULL DEFAULT '',
 		port22 BOOLEAN NOT NULL DEFAULT 0,
 		port23 BOOLEAN NOT NULL DEFAULT 0,
+		ssh_port INTEGER NOT NULL DEFAULT 22,
 		status TEXT NOT NULL DEFAULT '',
 		username TEXT NOT NULL DEFAULT '',
 		password TEXT NOT NULL DEFAULT '',
@@ -110,12 +111,13 @@ func (db *DB) initSchema() error {
 // SaveDevice saves or updates a device in the database
 func (db *DB) SaveDevice(device scanner.Device) error {
 	query := `
-	INSERT INTO devices (ip, hostname, port22, port23, status, username, password, connected, last_seen, updated_at)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+	INSERT INTO devices (ip, hostname, port22, port23, ssh_port, status, username, password, connected, last_seen, updated_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 	ON CONFLICT(ip) DO UPDATE SET
 		hostname = excluded.hostname,
 		port22 = excluded.port22,
 		port23 = excluded.port23,
+		ssh_port = excluded.ssh_port,
 		status = excluded.status,
 		username = excluded.username,
 		password = excluded.password,
@@ -124,7 +126,7 @@ func (db *DB) SaveDevice(device scanner.Device) error {
 		updated_at = CURRENT_TIMESTAMP
 	`
 
-	_, err := db.conn.Exec(query, device.IP, device.Hostname, device.Port22, device.Port23,
+	_, err := db.conn.Exec(query, device.IP, device.Hostname, device.Port22, device.Port23, device.SSHPort,
 		device.Status, device.Username, device.Password, device.Connected)
 	return err
 }
@@ -138,12 +140,13 @@ func (db *DB) SaveDevices(devices []scanner.Device) error {
 	defer tx.Rollback()
 
 	stmt, err := tx.Prepare(`
-	INSERT INTO devices (ip, hostname, port22, port23, status, username, password, connected, last_seen, updated_at)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+	INSERT INTO devices (ip, hostname, port22, port23, ssh_port, status, username, password, connected, last_seen, updated_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 	ON CONFLICT(ip) DO UPDATE SET
 		hostname = excluded.hostname,
 		port22 = excluded.port22,
 		port23 = excluded.port23,
+		ssh_port = excluded.ssh_port,
 		status = excluded.status,
 		username = excluded.username,
 		password = excluded.password,
@@ -157,7 +160,7 @@ func (db *DB) SaveDevices(devices []scanner.Device) error {
 	defer stmt.Close()
 
 	for _, device := range devices {
-		_, err := stmt.Exec(device.IP, device.Hostname, device.Port22, device.Port23,
+		_, err := stmt.Exec(device.IP, device.Hostname, device.Port22, device.Port23, device.SSHPort,
 			device.Status, device.Username, device.Password, device.Connected)
 		if err != nil {
 			return fmt.Errorf("failed to save device %s: %v", device.IP, err)
@@ -170,7 +173,7 @@ func (db *DB) SaveDevices(devices []scanner.Device) error {
 // LoadDevices loads all devices from the database
 func (db *DB) LoadDevices() ([]scanner.Device, error) {
 	query := `
-	SELECT ip, hostname, port22, port23, status, username, password, connected
+	SELECT ip, hostname, port22, port23, ssh_port, status, username, password, connected
 	FROM devices
 	ORDER BY last_seen DESC, ip ASC
 	`
@@ -184,7 +187,7 @@ func (db *DB) LoadDevices() ([]scanner.Device, error) {
 	var devices []scanner.Device
 	for rows.Next() {
 		var device scanner.Device
-		err := rows.Scan(&device.IP, &device.Hostname, &device.Port22, &device.Port23,
+		err := rows.Scan(&device.IP, &device.Hostname, &device.Port22, &device.Port23, &device.SSHPort,
 			&device.Status, &device.Username, &device.Password, &device.Connected)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan device row: %v", err)
@@ -202,7 +205,7 @@ func (db *DB) LoadDevices() ([]scanner.Device, error) {
 // LoadRecentDevices loads devices seen within the last specified duration
 func (db *DB) LoadRecentDevices(since time.Duration) ([]scanner.Device, error) {
 	query := `
-	SELECT ip, hostname, port22, port23, status, username, password, connected
+	SELECT ip, hostname, port22, port23, ssh_port, status, username, password, connected
 	FROM devices
 	WHERE last_seen > datetime('now', '-' || ? || ' seconds')
 	ORDER BY last_seen DESC, ip ASC
@@ -217,7 +220,7 @@ func (db *DB) LoadRecentDevices(since time.Duration) ([]scanner.Device, error) {
 	var devices []scanner.Device
 	for rows.Next() {
 		var device scanner.Device
-		err := rows.Scan(&device.IP, &device.Hostname, &device.Port22, &device.Port23,
+		err := rows.Scan(&device.IP, &device.Hostname, &device.Port22, &device.Port23, &device.SSHPort,
 			&device.Status, &device.Username, &device.Password, &device.Connected)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan device row: %v", err)
