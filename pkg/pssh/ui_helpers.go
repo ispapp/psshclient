@@ -162,7 +162,7 @@ func ConnectToMultipleDevices(devices []string, credentials SSHCredentials, pare
 }
 
 // OpenMultipleTerminals opens a single multi-device terminal for SSH connections
-func OpenMultipleTerminals(connections []*SSHConnection, parentApp fyne.App) error {
+func OpenMultipleTerminals(connections []*SSHConnection, parentWindow fyne.Window) error {
 	if len(connections) == 0 {
 		return fmt.Errorf("no connections provided")
 	}
@@ -170,18 +170,18 @@ func OpenMultipleTerminals(connections []*SSHConnection, parentApp fyne.App) err
 	// Create terminal manager
 	termManager := NewTerminalManager()
 
-	// Create title with device count
-	title := fmt.Sprintf("Multi-Device SSH Terminal (%d devices)", len(connections))
-
 	// Create multi-device terminal in main thread
 	var multiTerm *SSHMultiTerminal
 	var err error
 
 	// Use Fyne's Do to ensure UI operations happen in main thread
 	fyne.Do(func() {
-		multiTerm, err = termManager.NewSSHMultiTerminal(connections, title)
+		multiTerm, err = termManager.NewSSHMultiTerminal(connections)
 		if err == nil {
-			multiTerm.ShowTerminalWindow()
+			term := multiTerm.GetWidget()
+			dialog := dialog.NewCustom("Multi-Device SSH Terminal", "Close", term, parentWindow)
+			dialog.Resize(fyne.NewSize(800, 600))
+			dialog.Show()
 		}
 	})
 
@@ -197,19 +197,15 @@ func OpenMultipleTabbedTerminals(connections []*SSHConnection) error {
 	if len(connections) == 0 {
 		return fmt.Errorf("no connections provided")
 	}
-
 	// Create terminal manager
 	termManager := NewTerminalManager()
-
 	// Create title with device count
 	title := fmt.Sprintf("SSH Terminals (%d devices)", len(connections))
-
 	// Create tabbed terminal window
 	err := termManager.MultiTerminalWindow(connections, title)
 	if err != nil {
 		return fmt.Errorf("failed to create tabbed terminal window: %v", err)
 	}
-
 	return nil
 }
 
@@ -229,7 +225,7 @@ func CreateSSHMenuActions(selectedDevices []string, parent fyne.Window, app fyne
 				}
 
 				// Open multi-device terminal
-				err = OpenMultipleTerminals(connections, app)
+				err = OpenMultipleTerminals(connections, parent)
 				if err != nil {
 					dialog.ShowError(err, parent)
 				}

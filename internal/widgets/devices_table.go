@@ -12,6 +12,7 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -190,10 +191,19 @@ func CreateDevicesTableWithWindow(parentWindow fyne.Window, app fyne.App) *fyne.
 	data.DeviceList.AddListener(binding.NewDataListener(func() {
 		count := data.DeviceList.Length()
 		sshCount := getSSHDeviceCount()
+
+		// Get database status
+		dbStatus := ""
+		if data.DB != nil {
+			if dbCount, err := data.DB.GetDeviceCount(); err == nil {
+				dbStatus = fmt.Sprintf(" (DB: %d)", dbCount)
+			}
+		}
+
 		if count == 0 {
-			statusLabel.SetText("No devices found")
+			statusLabel.SetText("No devices found" + dbStatus)
 		} else {
-			statusLabel.SetText(fmt.Sprintf("Found %d device(s), %d with SSH", count, sshCount))
+			statusLabel.SetText(fmt.Sprintf("Found %d device(s), %d with SSH%s", count, sshCount, dbStatus))
 		}
 	}))
 
@@ -205,7 +215,7 @@ func CreateDevicesTableWithWindow(parentWindow fyne.Window, app fyne.App) *fyne.
 	var topSection *fyne.Container
 	if sshControls != nil {
 		topSection = container.NewVBox(
-			container.NewHBox(statusLabel, widget.NewSeparator(), sshControls),
+			sshControls,
 			scanningLabel,
 		)
 	} else {
@@ -221,29 +231,6 @@ func CreateDevicesTableWithWindow(parentWindow fyne.Window, app fyne.App) *fyne.
 	)
 
 	return content
-}
-
-// Helper functions for SSH device management
-
-// getSelectedSSHDevices returns the IP addresses of selected devices that have SSH enabled
-func getSelectedSSHDevices(selectedDevices map[int]bool) []string {
-	var sshDevices []string
-
-	for deviceIndex, selected := range selectedDevices {
-		if !selected {
-			continue
-		}
-
-		if deviceIndex < data.DeviceList.Length() {
-			if deviceObj, err := data.DeviceList.GetValue(deviceIndex); err == nil {
-				if device, ok := deviceObj.(scanner.Device); ok && device.Port22 {
-					sshDevices = append(sshDevices, device.IP)
-				}
-			}
-		}
-	}
-
-	return sshDevices
 }
 
 // getSSHDeviceCount returns the total number of devices with SSH enabled
@@ -265,7 +252,7 @@ func getSSHDeviceCount() int {
 // createSSHControls creates SSH control buttons
 func createSSHControls(selectedDevices map[int]bool, sshManager *pssh.SSHManager, parentWindow fyne.Window, app fyne.App) *fyne.Container {
 	// Multi-Device SSH Terminal button using new terminal widget
-	sshTerminalBtn := widget.NewButton("Multi-Device SSH Terminal", func() {
+	sshTerminalBtn := widget.NewButtonWithIcon("Terminal", theme.ComputerIcon(), func() {
 		var connections []*pssh.SSHConnection
 
 		// Get connected devices that are selected
@@ -301,25 +288,16 @@ func createSSHControls(selectedDevices map[int]bool, sshManager *pssh.SSHManager
 
 		// Create new SSH multi-terminal
 		fmt.Printf("Creating terminal manager...\n")
-		terminalManager := pssh.NewTerminalManager()
-
-		fmt.Printf("Creating multi-terminal for %d connections...\n", len(connections))
-		multiTerm, err := terminalManager.NewSSHMultiTerminal(connections, "Multi-Device SSH Terminal")
+		err := pssh.OpenMultipleTerminals(connections, parentWindow)
 		if err != nil {
 			fmt.Printf("Failed to create multi-terminal: %v\n", err)
 			dialog.ShowError(err, parentWindow)
 			return
 		}
-
-		fmt.Printf("Showing terminal window...\n")
-		// Show terminal window in a way that doesn't block the main UI
-		fyne.Do(func() {
-			multiTerm.ShowTerminalWindow()
-		})
 	})
 
 	// Select All SSH button
-	selectAllSSHBtn := widget.NewButton("Select All SSH", func() {
+	selectAllSSHBtn := widget.NewButtonWithIcon("Select All SSH", theme.ConfirmIcon(), func() {
 		// Clear current selection
 		for k := range selectedDevices {
 			delete(selectedDevices, k)
@@ -349,7 +327,7 @@ func createSSHControls(selectedDevices map[int]bool, sshManager *pssh.SSHManager
 	})
 
 	// Clear Selection button
-	clearSelectionBtn := widget.NewButton("Clear Selection", func() {
+	clearSelectionBtn := widget.NewButtonWithIcon("Clear", theme.ContentClearIcon(), func() {
 		// Clear all selections
 		for k := range selectedDevices {
 			delete(selectedDevices, k)
@@ -359,20 +337,66 @@ func createSSHControls(selectedDevices map[int]bool, sshManager *pssh.SSHManager
 			parentWindow)
 	})
 
-	return container.NewHBox(
+	// Load Recent button - loads devices from last 7 days
+	loadRecentBtn := widget.NewButtonWithIcon("Recent", theme.HistoryIcon(), func() {
+		data.LoadRecentDevicesFromDB(7 * 24 * time.Hour)
+		dialog.ShowInformation("Devices Loaded",
+			"Recent devices from the last 7 days have been loaded from the database.",
+			parentWindow)
+	})
+
+	// Load All button - loads all devices from database
+	loadAllBtn := widget.NewButtonWithIcon("Load All", theme.FolderOpenIcon(), func() {
+		data.LoadDevicesFromDB()
+		dialog.ShowInformation("Devices Loaded",
+			"All saved devices have been loaded from the database.",
+			parentWindow)
+	})
+
+	// Save Current button - saves current device list to database
+	saveCurrentBtn := widget.NewButtonWithIcon("Save", theme.DocumentSaveIcon(), func() {
+		data.SaveDevicesToDB()
+		dialog.ShowInformation("Devices Saved",
+			"Current device list has been saved to the database.",
+			parentWindow)
+	})
+
+	// Clear Database button - clears all devices from database
+	clearDBBtn := widget.NewButtonWithIcon("Clear DB", theme.DeleteIcon(), func() {
+		dialog.ShowConfirm("Clear Database",
+			"Are you sure you want to clear all devices from the database? This cannot be undone.",
+			func(confirmed bool) {
+				if confirmed {
+					data.ClearDevicesAndDB()
+					dialog.ShowInformation("Database Cleared",
+						"All devices have been removed from the database.",
+						parentWindow)
+				}
+			}, parentWindow)
+	})
+
+	// Create database controls section
+	dbControls := container.NewHBox(
+		loadRecentBtn,
+		loadAllBtn,
+		saveCurrentBtn,
+		clearDBBtn,
+	)
+
+	// Create SSH controls section
+	sshControls := container.NewHBox(
 		selectAllSSHBtn,
 		clearSelectionBtn,
 		widget.NewSeparator(),
 		sshTerminalBtn,
 	)
-}
 
-// Legacy function kept for compatibility but updated to use new terminal
-func openSSHTerminals(devices []string, parent fyne.Window, app fyne.App) {
-	// This function is now deprecated - use the Connect button in table rows instead
-	dialog.ShowInformation("Use Individual Connections",
-		"Please use the Connect button for each device in the table, then use the Multi-Device SSH Terminal button.",
-		parent)
+	// Combine both sections with a separator
+	parrentwidth := parentWindow.Canvas().Size().Width
+	return container.NewGridWrap(
+		fyne.NewSize(parrentwidth, 24),
+		container.NewHBox(widget.NewSeparator(), widget.NewIcon(theme.StorageIcon()), dbControls, widget.NewIcon(theme.ComputerIcon()), sshControls),
+	)
 }
 
 // showUsernameDialog shows a dialog to enter username for a device
@@ -411,11 +435,11 @@ func updateDeviceField(deviceIndex int, field, value string) {
 				switch field {
 				case "username":
 					device.Username = value
+					data.UpdateDevice(deviceIndex, device)
 				case "password":
 					device.Password = value
+					data.UpdateDevice(deviceIndex, device)
 				}
-				// Update the device in the list
-				data.DeviceList.SetValue(deviceIndex, device)
 			}
 		}
 	}
@@ -441,7 +465,7 @@ func connectToDevice(deviceIndex int, sshManager *pssh.SSHManager, parentWindow 
 					}
 					device.Connected = false
 					device.Status = "Disconnected"
-					data.DeviceList.SetValue(deviceIndex, device)
+					data.UpdateDevice(deviceIndex, device)
 				} else {
 					// Connect
 					if device.Username == "" || device.Password == "" {
@@ -473,7 +497,7 @@ func connectToDevice(deviceIndex int, sshManager *pssh.SSHManager, parentWindow 
 							fmt.Printf("Successfully connected to %s\n", device.IP)
 							device.Connected = true
 							device.Status = "Connected"
-							data.DeviceList.SetValue(deviceIndex, device)
+							data.UpdateDevice(deviceIndex, device)
 						} else {
 							fmt.Printf("Connection to %s reported as not connected\n", device.IP)
 						}

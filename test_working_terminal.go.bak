@@ -316,7 +316,7 @@ func createLocalTerminal(myApp fyne.App, myWindow fyne.Window) {
 	term := terminal.New()
 
 	// Set content and show window
-	myWindow.SetContent(container.NewMax(term))
+	myWindow.SetContent(container.NewStack(term))
 	myWindow.SetTitle("Local Terminal Test - No SSH")
 
 	fmt.Println("🚀 Showing local test terminal...")

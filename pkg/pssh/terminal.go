@@ -8,7 +8,6 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/widget"
 	"github.com/fyne-io/terminal"
 	"golang.org/x/crypto/ssh"
 )
@@ -312,7 +311,6 @@ func (tm *TerminalManager) MultiTerminalWindow(connections []*SSHConnection, tit
 		// Create terminal directly (no fyne.Do needed yet)
 		t := terminal.New()
 		t.Resize(fyne.NewSize(1000, 700))
-
 		// Start SSH shell
 		go func(s *ssh.Session, host string) {
 			err := s.Shell()
@@ -390,23 +388,21 @@ type SSHMultiTerminal struct {
 	sessions       []*ssh.Session
 	connections    []*SSHConnection
 	terminal       *terminal.Terminal
-	window         fyne.Window
-	app            fyne.App
 	stdinWriters   []io.WriteCloser
 	stdoutReaders  []io.Reader  // Store stdout readers during setup
 	activeSessions map[int]bool // Track which sessions are still active
-	mutex          sync.RWMutex
+	multiStdin     *multiWriter // Store multi-writer for proper cleanup
+	multiStdout    *multiReader // Store multi-reader for proper cleanup
+	closed         bool         // Track if already closed to prevent double cleanup
+	closeMutex     sync.Mutex   // Protect against concurrent close calls
 }
 
 // multiWriter writes to multiple writers simultaneously
 type multiWriter struct {
 	writers []io.WriteCloser
-	mutex   sync.RWMutex
 }
 
 func (mw *multiWriter) Write(p []byte) (n int, err error) {
-	mw.mutex.RLock()
-	defer mw.mutex.RUnlock()
 
 	for _, w := range mw.writers {
 		if w != nil {
@@ -417,14 +413,14 @@ func (mw *multiWriter) Write(p []byte) (n int, err error) {
 }
 
 func (mw *multiWriter) Close() error {
-	mw.mutex.Lock()
-	defer mw.mutex.Unlock()
-
 	var errs []error
 	for _, w := range mw.writers {
 		if w != nil {
 			if err := w.Close(); err != nil {
-				errs = append(errs, err)
+				// Ignore EOF errors as they indicate the pipe is already closed
+				if err != io.EOF {
+					errs = append(errs, err)
+				}
 			}
 		}
 	}
@@ -535,8 +531,8 @@ func (br *banneredReader) Read(p []byte) (n int, err error) {
 	return br.reader.Read(p)
 }
 
-// NewSSHMultiTerminal creates a single terminal that handles multiple SSH sessions
-func (tm *TerminalManager) NewSSHMultiTerminal(connections []*SSHConnection, title string) (*SSHMultiTerminal, error) {
+// NewSSHMultiTerminal creates a single terminal widget that handles multiple SSH sessions
+func (tm *TerminalManager) NewSSHMultiTerminal(connections []*SSHConnection) (*SSHMultiTerminal, error) {
 	fmt.Printf("NewSSHMultiTerminal called with %d connections\n", len(connections))
 
 	if len(connections) == 0 {
@@ -609,15 +605,6 @@ func (tm *TerminalManager) NewSSHMultiTerminal(connections []*SSHConnection, tit
 		return nil, fmt.Errorf("no valid SSH sessions could be created")
 	}
 
-	fmt.Printf("Creating Fyne app and window...\n")
-	// Create Fyne app and window
-	a := app.New()
-	w := a.NewWindow(title)
-	w.Resize(fyne.NewSize(1000, 700))
-
-	fmt.Printf("Setting up multi-reader/writer...\n")
-	// We'll create the multi-readers/writers later in ShowTerminal when the app is running
-
 	fmt.Printf("Starting %d SSH shell sessions...\n", len(sessions))
 	// Track active sessions
 	activeSessions := make(map[int]bool)
@@ -654,65 +641,22 @@ func (tm *TerminalManager) NewSSHMultiTerminal(connections []*SSHConnection, tit
 		}(session, validConnections[i].Config.Host, i)
 	}
 
-	// Create SSH multi-terminal instance WITHOUT terminal widget first
-	sshMultiTerm := &SSHMultiTerminal{
-		sessions:       sessions,
-		connections:    validConnections,
-		terminal:       nil, // Will be created after app starts
-		window:         w,
-		app:            a,
-		stdinWriters:   stdinWriters,
-		stdoutReaders:  stdoutReaders, // Store the stdout readers
-		activeSessions: activeSessions,
-		mutex:          sync.RWMutex{},
-	}
-
-	// Set up the window to initialize the terminal AFTER the app starts running
-	w.SetOnClosed(func() {
-		fmt.Printf("Window closed, cleaning up sessions\n")
-		sshMultiTerm.Close()
-	})
-
-	// Set content setup function that will be called when the app starts
-	w.SetContent(&widget.Label{Text: "Initializing terminal..."})
-
-	fmt.Printf("SSH multi-terminal created successfully with %d sessions\n", len(sessions))
-	return sshMultiTerm, nil
-}
-
-// ShowTerminal displays the SSH multi-terminal window
-func (smt *SSHMultiTerminal) ShowTerminal() {
-	fmt.Printf("ShowTerminal called - will block until window closes\n")
-
-	// Initialize the terminal before showing the window
-	fmt.Printf("Initializing terminal...\n")
-
-	// Create the terminal widget
+	// Create terminal widget immediately
 	t := terminal.New()
 	t.Resize(fyne.NewSize(1000, 700))
 
-	// Store the terminal reference
-	smt.mutex.Lock()
-	smt.terminal = t
-	smt.mutex.Unlock()
-
 	// Create multi-writer for stdin (distributes input to all sessions)
-	multiStdin := &multiWriter{writers: smt.stdinWriters}
+	multiStdin := &multiWriter{writers: stdinWriters}
 
-	// Use the stored stdout readers
-	multiStdout := newMultiReader(smt.stdoutReaders)
-
-	// Update window content with the terminal
-	smt.window.SetContent(t)
+	// Create multi-reader for stdout (combines output from all sessions)
+	multiStdout := newMultiReader(stdoutReaders)
 
 	// Connect terminal to the multi-reader/writer in a goroutine
 	go func() {
 		defer func() {
-			fmt.Printf("Terminal connection ended, quitting app\n")
-			go func() {
-				smt.app.Quit()
-			}()
+			fmt.Printf("Terminal connection goroutine ending\n")
 		}()
+
 		err := t.RunWithConnection(multiStdin, multiStdout)
 		if err != nil {
 			fmt.Printf("Terminal connection error: %v\n", err)
@@ -733,33 +677,33 @@ func (smt *SSHMultiTerminal) ShowTerminal() {
 			fmt.Printf("Terminal resize requested: %dx%d\n", rows, cols)
 
 			// Resize all sessions with better error handling
-			for i, session := range smt.sessions {
+			for i, session := range sessions {
 				if session == nil {
-					fmt.Printf("Skipping resize for %s: session is nil\n", smt.connections[i].Config.Host)
+					fmt.Printf("Skipping resize for %s: session is nil\n", validConnections[i].Config.Host)
 					continue
 				}
 
 				// Check if session is still active
-				if !smt.activeSessions[i] {
-					fmt.Printf("Skipping resize for %s: session ended\n", smt.connections[i].Config.Host)
+				if !activeSessions[i] {
+					fmt.Printf("Skipping resize for %s: session ended\n", validConnections[i].Config.Host)
 					continue
 				}
 
 				// Check if connection is still alive before resizing
-				if !smt.connections[i].IsConnected() {
-					fmt.Printf("Skipping resize for %s: connection lost\n", smt.connections[i].Config.Host)
-					smt.activeSessions[i] = false // Mark as inactive
+				if !validConnections[i].IsConnected() {
+					fmt.Printf("Skipping resize for %s: connection lost\n", validConnections[i].Config.Host)
+					activeSessions[i] = false // Mark as inactive
 					continue
 				}
 
 				err := session.WindowChange(int(rows), int(cols))
 				if err != nil {
 					fmt.Printf("Failed to resize terminal for %s: %v (connection may be lost)\n",
-						smt.connections[i].Config.Host, err)
+						validConnections[i].Config.Host, err)
 					// Don't mark as inactive yet - might just be a temporary error
 				} else {
 					fmt.Printf("Successfully resized terminal for %s to %dx%d\n",
-						smt.connections[i].Config.Host, rows, cols)
+						validConnections[i].Config.Host, rows, cols)
 				}
 			}
 		}
@@ -768,66 +712,153 @@ func (smt *SSHMultiTerminal) ShowTerminal() {
 	// Add listener for terminal resizing
 	t.AddListener(configChan)
 
-	fmt.Printf("Terminal initialized and connected successfully\n")
+	// Create SSH multi-terminal instance
+	sshMultiTerm := &SSHMultiTerminal{
+		sessions:       sessions,
+		connections:    validConnections,
+		terminal:       t,
+		stdinWriters:   stdinWriters,
+		stdoutReaders:  stdoutReaders,
+		activeSessions: activeSessions,
+		multiStdin:     multiStdin,
+		multiStdout:    multiStdout,
+	}
 
-	// ShowAndRun() should be called directly, not through fyne.Do()
-	smt.window.ShowAndRun()
-	fmt.Printf("ShowTerminal finished - window closed\n")
+	fmt.Printf("SSH multi-terminal widget created successfully with %d sessions\n", len(sessions))
+	return sshMultiTerm, nil
 }
 
-// ShowTerminalWindow displays the terminal window without running
-func (smt *SSHMultiTerminal) ShowTerminalWindow() {
-	fmt.Printf("ShowTerminalWindow called - non-blocking\n")
-	// Show() should be called directly, not through fyne.Do()
-	smt.window.Show()
-	fmt.Printf("ShowTerminalWindow finished - window should be visible\n")
+// GetWidget returns the terminal widget that can be embedded in any container
+func (smt *SSHMultiTerminal) GetWidget() *terminal.Terminal {
+	return smt.terminal
+}
+
+// CreateStandaloneWindow creates a standalone window containing the multi-terminal widget
+func (smt *SSHMultiTerminal) CreateStandaloneWindow(title string) (fyne.Window, fyne.App) {
+	a := app.New()
+	w := a.NewWindow(title)
+	w.Resize(fyne.NewSize(1000, 700))
+
+	w.SetContent(smt.terminal)
+
+	// Set up cleanup when window is closed
+	w.SetOnClosed(func() {
+		fmt.Printf("Standalone window closed, cleaning up sessions\n")
+		smt.Close()
+		a.Quit()
+		fmt.Printf("Standalone window cleanup complete\n")
+	})
+
+	return w, a
+}
+
+// Example usage functions
+
+// CreateMultiTerminalWindow creates a standalone window with multiple SSH terminals (legacy compatibility)
+func (tm *TerminalManager) CreateMultiTerminalWindow(connections []*SSHConnection, title string) error {
+	// Create the multi-terminal widget
+	multiTerm, err := tm.NewSSHMultiTerminal(connections)
+	if err != nil {
+		return fmt.Errorf("failed to create multi-terminal: %v", err)
+	}
+
+	// Create a standalone window for it
+	window, _ := multiTerm.CreateStandaloneWindow(title)
+
+	// Show and run the window (this will block until the window is closed)
+	window.ShowAndRun()
+
+	return nil
+}
+
+// CreateMultiTerminalWidget creates a multi-terminal widget that can be embedded in any container
+func (tm *TerminalManager) CreateMultiTerminalWidget(connections []*SSHConnection) (*terminal.Terminal, *SSHMultiTerminal, error) {
+	// Create the multi-terminal widget
+	multiTerm, err := tm.NewSSHMultiTerminal(connections)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create multi-terminal: %v", err)
+	}
+
+	// Return both the widget and the controller for lifecycle management
+	return multiTerm.GetWidget(), multiTerm, nil
 }
 
 // Close closes all SSH sessions and the terminal
 func (smt *SSHMultiTerminal) Close() error {
-	smt.mutex.Lock()
-	defer smt.mutex.Unlock()
+	smt.closeMutex.Lock()
+	defer smt.closeMutex.Unlock()
+
+	// Prevent double cleanup
+	if smt.closed {
+		fmt.Printf("SSHMultiTerminal.Close() already called, skipping\n")
+		return nil
+	}
+
+	fmt.Printf("SSHMultiTerminal.Close() called\n")
+	smt.closed = true
 
 	var errs []error
+
+	// Close multi-reader and multi-writer first
+	if smt.multiStdout != nil {
+		if err := smt.multiStdout.Close(); err != nil {
+			// multiReader close should not fail, but handle gracefully
+			fmt.Printf("Warning: failed to close multi-reader: %v\n", err)
+		}
+	}
+
+	if smt.multiStdin != nil {
+		if err := smt.multiStdin.Close(); err != nil {
+			// Only report significant errors (non-EOF)
+			if err != io.EOF && !isConnectionClosed(err) {
+				errs = append(errs, fmt.Errorf("failed to close multi-writer: %v", err))
+			} else {
+				fmt.Printf("Multi-writer already closed or connections ended: %v\n", err)
+			}
+		}
+	}
 
 	// Close all SSH sessions
 	for i, session := range smt.sessions {
 		if session != nil {
 			if err := session.Close(); err != nil {
-				errs = append(errs, fmt.Errorf("failed to close SSH session for %s: %v",
-					smt.connections[i].Config.Host, err))
+				// Only report non-EOF errors as significant
+				if err != io.EOF && err.Error() != "session is not connected" {
+					errs = append(errs, fmt.Errorf("failed to close SSH session for %s: %v",
+						smt.connections[i].Config.Host, err))
+				} else {
+					fmt.Printf("SSH session for %s already closed (%v)\n", smt.connections[i].Config.Host, err)
+				}
 			}
 		}
 	}
 
-	// Close stdin writers
-	for _, writer := range smt.stdinWriters {
+	// Close stdin writers (ignore EOF errors as they indicate already closed pipes)
+	for i, writer := range smt.stdinWriters {
 		if writer != nil {
 			if err := writer.Close(); err != nil {
-				errs = append(errs, fmt.Errorf("failed to close stdin writer: %v", err))
+				// Ignore EOF errors as they indicate the pipe is already closed
+				if err != io.EOF {
+					errs = append(errs, fmt.Errorf("failed to close stdin writer for %s: %v",
+						smt.connections[i].Config.Host, err))
+				} else {
+					fmt.Printf("Stdin writer for %s already closed (EOF)\n", smt.connections[i].Config.Host)
+				}
 			}
 		}
-	}
-
-	// Close window
-	if smt.window != nil {
-		// Only use fyne.Do if the app is running
-		// For simplicity, just close directly
-		smt.window.Close()
 	}
 
 	if len(errs) > 0 {
+		fmt.Printf("Errors during cleanup: %v\n", errs)
 		return fmt.Errorf("errors closing SSH multi-terminal: %v", errs)
 	}
 
+	fmt.Printf("SSHMultiTerminal.Close() completed successfully\n")
 	return nil
 }
 
 // GetConnectedHosts returns a list of connected host names
 func (smt *SSHMultiTerminal) GetConnectedHosts() []string {
-	smt.mutex.RLock()
-	defer smt.mutex.RUnlock()
-
 	var hosts []string
 	for _, conn := range smt.connections {
 		hosts = append(hosts, conn.Config.Host)
@@ -837,8 +868,18 @@ func (smt *SSHMultiTerminal) GetConnectedHosts() []string {
 
 // GetSessionCount returns the number of active SSH sessions
 func (smt *SSHMultiTerminal) GetSessionCount() int {
-	smt.mutex.RLock()
-	defer smt.mutex.RUnlock()
-
 	return len(smt.sessions)
+}
+
+// isConnectionClosed checks if an error indicates a closed connection
+func isConnectionClosed(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	return errStr == "session is not connected" ||
+		errStr == "connection lost" ||
+		errStr == "broken pipe" ||
+		errStr == "use of closed network connection" ||
+		errStr == "EOF"
 }

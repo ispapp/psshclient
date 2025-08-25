@@ -3,7 +3,9 @@ package ui
 import (
 	"ispappclient/internal/data"
 	"ispappclient/internal/dialogs"
+	"ispappclient/internal/settings"
 	"ispappclient/internal/widgets"
+	"log"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -11,13 +13,13 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-var (
-	proto    = "tcp"
-	fastscan = true
-	syn      = false
-)
-
 func NewMainUI(app fyne.App) fyne.Window {
+	// Initialize settings first
+	if err := settings.Initialize(); err != nil {
+		log.Printf("Failed to initialize settings: %v", err)
+		// Continue with defaults
+	}
+
 	// Initialize global data bindings
 	data.Init()
 
@@ -27,16 +29,15 @@ func NewMainUI(app fyne.App) fyne.Window {
 	// Create devices table with SSH functionality
 	devicesTable := widgets.CreateDevicesTableWithWindow(MainWindow, app)
 
+	// Create settings tab
+	settingsTab := widgets.CreateSettingsTab(MainWindow)
+
 	tabs := container.NewAppTabs(
 		container.NewTabItem("Devices", devicesTable),
-		container.NewTabItem("Settings", container.NewVBox(
-			widget.NewLabel("Device Actions"),
-			actionLabel,
-			widget.NewLabel("# SETTINGS FORM (EDIT/SAVE) #"),
-		)),
+		container.NewTabItem("Settings", settingsTab),
 	)
-	// Create file menu
-	fileMenu := fyne.NewMenu("Scan",
+	// Create scan menu
+	scanMenu := fyne.NewMenu("Scan",
 		fyne.NewMenuItem("Start Fast Scan", func() {
 			actionLabel.SetText("Selected: Start Fast Scan")
 			dialogs.ShowFastScanDialog(MainWindow)
@@ -54,29 +55,14 @@ func NewMainUI(app fyne.App) fyne.Window {
 		}),
 	)
 
-	// Create edit menu
-	editMenu := fyne.NewMenu("Edit",
-		fyne.NewMenuItem("Cut", func() {
-			actionLabel.SetText("Selected: Cut")
+	// Create File menu
+	fileMenu := fyne.NewMenu("File",
+		fyne.NewMenuItem("Import CSV", func() {
+			dialogs.ShowCSVImportDialog(MainWindow)
 		}),
-		fyne.NewMenuItem("Copy", func() {
-			actionLabel.SetText("Selected: Copy")
-		}),
-		fyne.NewMenuItem("Paste", func() {
-			actionLabel.SetText("Selected: Paste")
-		}),
-		fyne.NewMenuItemSeparator(),
-		fyne.NewMenuItem("Select All SSH Devices", func() {
-			actionLabel.SetText("Selected: Select All SSH Devices")
-			dialog.ShowInformation("SSH Selection",
-				"Use the 'Select All SSH' button in the Devices tab to select all devices with SSH support",
-				MainWindow)
-		}),
-		fyne.NewMenuItem("Open SSH Terminal", func() {
-			actionLabel.SetText("Selected: Open SSH Terminal")
-			dialog.ShowInformation("SSH Terminal",
-				"Select devices in the Devices tab and use the SSH buttons to open terminals",
-				MainWindow)
+		fyne.NewMenuItem("Export CSV", func() {
+			// TODO: Implement CSV export
+			dialog.ShowInformation("Export CSV", "CSV export feature coming soon!", MainWindow)
 		}),
 	)
 
@@ -89,8 +75,8 @@ func NewMainUI(app fyne.App) fyne.Window {
 
 	// Create the main menu
 	mainMenu := fyne.NewMainMenu(
+		scanMenu,
 		fileMenu,
-		editMenu,
 		helpMenu,
 	)
 	MainWindow.SetMainMenu(mainMenu)
@@ -100,5 +86,14 @@ func NewMainUI(app fyne.App) fyne.Window {
 
 	MainWindow.SetContent(tabs)
 	MainWindow.Resize(fyne.NewSize(800, 600))
+
+	// Set up cleanup when the main window closes
+	MainWindow.SetOnClosed(func() {
+		// Save current devices to database before closing
+		data.SaveDevicesToDB()
+		// Close database connection
+		data.Close()
+	})
+
 	return MainWindow
 }
