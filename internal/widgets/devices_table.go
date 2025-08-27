@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"ispappclient/internal/data"
 	"ispappclient/internal/scanner"
+	"ispappclient/internal/settings"
 	"ispappclient/pkg/pssh"
 	"strconv"
 	"sync"
-	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -59,7 +59,6 @@ func CreateDevicesTableWithWindow(parentWindow fyne.Window, app fyne.App) *fyne.
 					if deviceObj, err := data.DeviceList.GetValue(deviceIndex); err == nil {
 						if device, ok := deviceObj.(scanner.Device); ok {
 							label := obj.(*widget.Label)
-
 							switch id.Col {
 							case 0: // Selection checkbox
 								selectionMutex.Lock()
@@ -89,7 +88,7 @@ func CreateDevicesTableWithWindow(parentWindow fyne.Window, app fyne.App) *fyne.
 							case 4: // SSH Port
 								if device.Port22 {
 									if device.SSHPort == 0 {
-										device.SSHPort = 22 // Default to 22 if not set
+										device.SSHPort = settings.Current.DefaultSSHPort
 									}
 									label.SetText(fmt.Sprintf("%d", device.SSHPort))
 								} else {
@@ -356,11 +355,11 @@ func createSSHControls(selectedDevices map[int]bool, sshManager *pssh.SSHManager
 			parentWindow)
 	})
 
-	// Load Recent button - loads devices from last 7 days
+	// Load Recent button - loads devices from last cleanup setting
 	loadRecentBtn := widget.NewButtonWithIcon("Recent", theme.HistoryIcon(), func() {
-		data.LoadRecentDevicesFromDB(7 * 24 * time.Hour)
+		data.LoadRecentDevicesFromDB(settings.Current.GetCleanupDuration())
 		dialog.ShowInformation("Devices Loaded",
-			"Recent devices from the last 7 days have been loaded from the database.",
+			fmt.Sprintf("Recent devices from the last %d days have been loaded from the database.", settings.Current.CleanupOldDays),
 			parentWindow)
 	})
 
@@ -436,7 +435,7 @@ func showUsernameDialog(deviceIndex int, currentUsername string, parent fyne.Win
 func showSSHPortDialog(deviceIndex int, currentPort int, parent fyne.Window, table *widget.Table) {
 	entry := widget.NewEntry()
 	if currentPort == 0 {
-		currentPort = 22 // Default to 22
+		currentPort = settings.Current.DefaultSSHPort
 	}
 	entry.SetText(fmt.Sprintf("%d", currentPort))
 	entry.SetPlaceHolder("Enter SSH port")
@@ -516,7 +515,7 @@ func connectToDevice(deviceIndex int, sshManager *pssh.SSHManager, parentWindow 
 
 					sshPort := device.SSHPort
 					if sshPort == 0 {
-						sshPort = 22 // Default to 22 if not set
+						sshPort = settings.Current.DefaultSSHPort
 					}
 
 					config := pssh.ConnectionConfig{
@@ -524,7 +523,7 @@ func connectToDevice(deviceIndex int, sshManager *pssh.SSHManager, parentWindow 
 						Port:     sshPort,
 						Username: device.Username,
 						Password: device.Password,
-						Timeout:  30 * time.Second,
+						Timeout:  settings.Current.GetConnectionTimeout(),
 					}
 
 					// Use the manager to connect (which stores the connection)

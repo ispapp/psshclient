@@ -1,9 +1,12 @@
 package pssh
 
 import (
+	"bytes"
 	"fmt"
 	"io"
+	"regexp"
 	"sync"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
@@ -11,6 +14,17 @@ import (
 	"github.com/fyne-io/terminal"
 	"golang.org/x/crypto/ssh"
 )
+
+var errorPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)error`),
+	regexp.MustCompile(`(?i)fail`),
+	regexp.MustCompile(`(?i)closed`),
+	regexp.MustCompile(`(?i)command not found`),
+	regexp.MustCompile(`(?i)permission denied`),
+	regexp.MustCompile(`(?i)no such file or directory`),
+	regexp.MustCompile(`(?i)unrecognized command`),
+	regexp.MustCompile(`(?i)invalid argument`),
+}
 
 // TerminalWidget represents a terminal connected to an SSH session
 type TerminalWidget struct {
@@ -393,16 +407,37 @@ type SSHMultiTerminal struct {
 	activeSessions map[int]bool // Track which sessions are still active
 	multiStdin     *multiWriter // Store multi-writer for proper cleanup
 	multiStdout    *multiReader // Store multi-reader for proper cleanup
-	closed         bool         // Track if already closed to prevent double cleanup
-	closeMutex     sync.Mutex   // Protect against concurrent close calls
+	state          *SSHMultiTerminalState
+	closed         bool       // Track if already closed to prevent double cleanup
+	closeMutex     sync.Mutex // Protect against concurrent close calls
+}
+
+// SSHMultiTerminalState manages shared state for a multi-terminal session.
+type SSHMultiTerminalState struct {
+	mutex           sync.Mutex
+	isTabCompletion bool
 }
 
 // multiWriter writes to multiple writers simultaneously
 type multiWriter struct {
 	writers []io.WriteCloser
+	state   *SSHMultiTerminalState
 }
 
 func (mw *multiWriter) Write(p []byte) (n int, err error) {
+	// Check for TAB key press
+	if mw.state != nil && bytes.Equal(p, []byte{'\t'}) {
+		mw.state.mutex.Lock()
+		mw.state.isTabCompletion = true
+		mw.state.mutex.Unlock()
+
+		// Reset the flag after a short delay to allow remote hosts to respond.
+		time.AfterFunc(250*time.Millisecond, func() {
+			mw.state.mutex.Lock()
+			mw.state.isTabCompletion = false
+			mw.state.mutex.Unlock()
+		})
+	}
 
 	for _, w := range mw.writers {
 		if w != nil {
@@ -437,19 +472,27 @@ type multiReader struct {
 	output  chan []byte
 	done    chan struct{}
 	mutex   sync.RWMutex
+	buffer  bytes.Buffer // Internal buffer for unread data
+	state   *SSHMultiTerminalState
 }
 
-func newMultiReader(readers []io.Reader) *multiReader {
+func newMultiReader(readers []io.Reader, hostnames []string, state *SSHMultiTerminalState) *multiReader {
+	// Buffer the output channel to handle multiple concurrent writers
 	mr := &multiReader{
 		readers: readers,
-		output:  make(chan []byte, 100),
+		output:  make(chan []byte, len(readers)*2),
 		done:    make(chan struct{}),
+		state:   state,
 	}
+
+	var wg sync.WaitGroup
+	wg.Add(len(readers))
 
 	// Start goroutines to read from each reader
 	for i, reader := range readers {
-		go func(r io.Reader, id int) {
-			buf := make([]byte, 1024)
+		go func(r io.Reader, id int, host string) {
+			defer wg.Done()
+			buf := make([]byte, 8192) // Use a larger buffer for efficiency
 			for {
 				select {
 				case <-mr.done:
@@ -457,40 +500,76 @@ func newMultiReader(readers []io.Reader) *multiReader {
 				default:
 					n, err := r.Read(buf)
 					if n > 0 {
-						// Don't add any prefixes - just pass through the raw data
-						// This prevents contamination of the stdin stream
-						mr.output <- buf[:n]
+						data := buf[:n]
+
+						// Handle TAB completion filtering
+						isTab := false
+						if mr.state != nil {
+							mr.state.mutex.Lock()
+							isTab = mr.state.isTabCompletion
+							mr.state.mutex.Unlock()
+						}
+
+						// If it's a tab completion, only show output from the last reader.
+						if isTab && id != len(mr.readers)-1 {
+							continue // Skip output from all but the last session
+						}
+
+						// Check for error keywords in the output
+						for _, pattern := range errorPatterns {
+							if pattern.Match(data) {
+								// Send notification via the main app thread
+								fyne.CurrentApp().SendNotification(fyne.NewNotification(
+									fmt.Sprintf("Alert from %s", host),
+									string(data),
+								))
+								break // Send only one notification per data chunk
+							}
+						}
+
+						// Prefix output with hostname for clarity
+						prefixedData := []byte(fmt.Sprintf("[%s]> ", host))
+						prefixedData = append(prefixedData, data...)
+						mr.output <- prefixedData
 					}
 					if err != nil {
 						if err != io.EOF {
-							fmt.Printf("Error reading from session %d: %v\n", id+1, err)
+							fmt.Printf("Error reading from session %d (%s): %v\n", id+1, host, err)
 						}
-						return
+						return // End goroutine on error or EOF
 					}
 				}
 			}
-		}(reader, i)
+		}(reader, i, hostnames[i])
 	}
+
+	// Goroutine to close the output channel once all readers have finished
+	go func() {
+		wg.Wait()
+		close(mr.output)
+	}()
 
 	return mr
 }
 
 func (mr *multiReader) Read(p []byte) (n int, err error) {
+	mr.mutex.Lock()
+	defer mr.mutex.Unlock()
+
+	// If our internal buffer has data, read from it first.
+	if mr.buffer.Len() > 0 {
+		return mr.buffer.Read(p)
+	}
+
+	// Wait for new data from the channel or for the reader to be closed.
 	select {
-	case data := <-mr.output:
-		n = copy(p, data)
-		// If buffer is too small, we need to handle this properly
-		if n < len(data) {
-			// Put the remaining data back in the channel for next read
-			remaining := data[n:]
-			go func() {
-				select {
-				case mr.output <- remaining:
-				case <-mr.done:
-				}
-			}()
+	case data, ok := <-mr.output:
+		if !ok {
+			return 0, io.EOF // Channel is closed, no more data.
 		}
-		return n, nil
+		// Write new data to our buffer and then read from it.
+		mr.buffer.Write(data)
+		return mr.buffer.Read(p)
 	case <-mr.done:
 		return 0, io.EOF
 	}
@@ -543,6 +622,7 @@ func (tm *TerminalManager) NewSSHMultiTerminal(connections []*SSHConnection) (*S
 	var stdinWriters []io.WriteCloser
 	var stdoutReaders []io.Reader
 	var validConnections []*SSHConnection
+	var hostnames []string
 
 	// Create sessions for all valid connections
 	for i, conn := range connections {
@@ -562,9 +642,9 @@ func (tm *TerminalManager) NewSSHMultiTerminal(connections []*SSHConnection) (*S
 
 		// Request a pseudo-terminal with proper settings for interactive shell
 		err = session.RequestPty("xterm-256color", 80, 24, ssh.TerminalModes{
-			ssh.ECHO:          1,     // enable echoing
-			ssh.TTY_OP_ISPEED: 14400, // input speed = 14.4kbaud
-			ssh.TTY_OP_OSPEED: 14400, // output speed = 14.4kbaud
+			ssh.ECHO:          1,      // enable echoing
+			ssh.TTY_OP_ISPEED: 115200, // input speed = 115.2kbaud
+			ssh.TTY_OP_OSPEED: 115200, // output speed = 115.2kbaud
 		})
 		if err != nil {
 			session.Close()
@@ -595,6 +675,7 @@ func (tm *TerminalManager) NewSSHMultiTerminal(connections []*SSHConnection) (*S
 		stdinWriters = append(stdinWriters, stdinPipe)
 		stdoutReaders = append(stdoutReaders, wrappedStdout)
 		validConnections = append(validConnections, conn)
+		hostnames = append(hostnames, conn.Config.Host)
 
 		fmt.Printf("Successfully created session for %s\n", conn.Config.Host)
 	}
@@ -645,11 +726,14 @@ func (tm *TerminalManager) NewSSHMultiTerminal(connections []*SSHConnection) (*S
 	t := terminal.New()
 	t.Resize(fyne.NewSize(1000, 700))
 
+	// Create a shared state for the session
+	state := &SSHMultiTerminalState{}
+
 	// Create multi-writer for stdin (distributes input to all sessions)
-	multiStdin := &multiWriter{writers: stdinWriters}
+	multiStdin := &multiWriter{writers: stdinWriters, state: state}
 
 	// Create multi-reader for stdout (combines output from all sessions)
-	multiStdout := newMultiReader(stdoutReaders)
+	multiStdout := newMultiReader(stdoutReaders, hostnames, state)
 
 	// Connect terminal to the multi-reader/writer in a goroutine
 	go func() {
@@ -722,6 +806,7 @@ func (tm *TerminalManager) NewSSHMultiTerminal(connections []*SSHConnection) (*S
 		activeSessions: activeSessions,
 		multiStdin:     multiStdin,
 		multiStdout:    multiStdout,
+		state:          state,
 	}
 
 	fmt.Printf("SSH multi-terminal widget created successfully with %d sessions\n", len(sessions))

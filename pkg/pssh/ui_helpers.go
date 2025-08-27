@@ -2,11 +2,13 @@ package pssh
 
 import (
 	"fmt"
+	"ispappclient/internal/resources"
 	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -179,7 +181,14 @@ func OpenMultipleTerminals(connections []*SSHConnection, parentWindow fyne.Windo
 		multiTerm, err = termManager.NewSSHMultiTerminal(connections)
 		if err == nil {
 			term := multiTerm.GetWidget()
-			dialog := dialog.NewCustom("Multi-Device SSH Terminal", "Close", term, parentWindow)
+			dialog := dialog.NewCustomWithoutButtons("", term, parentWindow)
+			dialog.SetButtons([]fyne.CanvasObject{
+				widget.NewButtonWithIcon("Close", theme.CancelIcon(), func() {
+					dialog.Hide()
+					term.Exit()
+				}),
+			})
+			dialog.SetIcon(resources.ResourceIconPng)
 			dialog.Resize(fyne.NewSize(800, 600))
 			dialog.Show()
 		}

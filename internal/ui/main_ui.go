@@ -61,8 +61,7 @@ func NewMainUI(app fyne.App) fyne.Window {
 			dialogs.ShowCSVImportDialog(MainWindow)
 		}),
 		fyne.NewMenuItem("Export CSV", func() {
-			// TODO: Implement CSV export
-			dialog.ShowInformation("Export CSV", "CSV export feature coming soon!", MainWindow)
+			dialogs.ShowCSVExportDialog(MainWindow)
 		}),
 	)
 

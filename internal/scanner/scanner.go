@@ -3,6 +3,7 @@ package scanner
 import (
 	"context"
 	"fmt"
+	"ispappclient/internal/settings"
 	"ispappclient/pkg/gomap"
 	"net"
 	"sync"
@@ -92,8 +93,11 @@ func ScanSubnet(ctx context.Context, subnet string, progressCallback func(string
 
 			progressCallback(fmt.Sprintf("Scanning %s (%d/%d)", currentIP, currentCount, len(ips)))
 
+			// Build port list from settings
+			portsToScan := settings.Current.DefaultSSHPort
+
 			// Use gomap to scan this specific IP with timeout
-			result, err := gomap.ScanIP(currentIP, "tcp", true, false) // fastscan=true, stealth=false
+			result, err := gomap.ScanIP(currentIP, "tcp", true, false, portsToScan) // fastscan=true, stealth=false
 
 			if err != nil {
 				// Check if the main context was cancelled
@@ -112,36 +116,33 @@ func ScanSubnet(ctx context.Context, subnet string, progressCallback func(string
 				IP:       currentIP,
 				Hostname: result.Hostname,
 				Status:   "Up",
+				Username: settings.Current.DefaultSSHUsername,
+				Password: settings.Current.DefaultSSHPassword,
 			}
 
-			// Check which ports are open (SSH=22, Telnet=23)
-			hasSSHOrTelnet := false
+			// Check which ports are open
+			hasOpenPort := false
 			for _, portResult := range result.Results {
 				if portResult.State {
-					if portResult.Port == 22 {
+					hasOpenPort = true
+					// Check for the default SSH port from settings
+					if portResult.Port == settings.Current.DefaultSSHPort {
 						device.Port22 = true
-						device.SSHPort = 22 // Default SSH port
-						hasSSHOrTelnet = true
+						device.SSHPort = settings.Current.DefaultSSHPort
+					} else if portResult.Port == 22 { // Also check for standard SSH port
+						device.Port22 = true
+						if device.SSHPort == 0 { // Don't override default from settings
+							device.SSHPort = 22
+						}
 					}
 					if portResult.Port == 23 {
 						device.Port23 = true
-						hasSSHOrTelnet = true
-					}
-				}
-				if portResult.State {
-					if portResult.Port == 22 {
-						device.Port22 = true
-						hasSSHOrTelnet = true
-					}
-					if portResult.Port == 23 {
-						device.Port23 = true
-						hasSSHOrTelnet = true
 					}
 				}
 			}
 
-			// Only add devices that have SSH or Telnet open
-			if hasSSHOrTelnet {
+			// Only add devices that have an open port from the scan list
+			if hasOpenPort {
 				devicesMutex.Lock()
 				devices = append(devices, device)
 				devicesMutex.Unlock()
@@ -207,16 +208,24 @@ func intToIP(i uint32) net.IP {
 // ScanSingleHost scans a single host for SSH/Telnet ports
 func ScanSingleHost(ctx context.Context, ip string) (*Device, error) {
 	device := &Device{
-		IP:     ip,
-		Status: "Down",
+		IP:       ip,
+		Status:   "Down",
+		Username: settings.Current.DefaultSSHUsername,
+		Password: settings.Current.DefaultSSHPassword,
 	}
 
 	// Create a timeout context for the scan
 	scanCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
+	// Build port list from settings
+	portsToScan := make(map[int]string)
+	for _, port := range settings.Current.DefaultScanPorts {
+		portsToScan[port] = "tcp"
+	}
+
 	// Use gomap to scan this specific IP with timeout
-	result, err := scanIPWithTimeout(scanCtx, ip)
+	result, err := scanIPWithTimeout(scanCtx, ip, portsToScan)
 	if err != nil {
 		return device, err
 	}
@@ -231,11 +240,17 @@ func ScanSingleHost(ctx context.Context, ip string) (*Device, error) {
 	if len(result.Results) > 0 {
 		device.Status = "Up"
 
-		// Check which ports are open (SSH=22, Telnet=23)
+		// Check which ports are open
 		for _, portResult := range result.Results {
 			if portResult.State {
-				if portResult.Port == 22 {
+				if portResult.Port == settings.Current.DefaultSSHPort {
 					device.Port22 = true
+					device.SSHPort = settings.Current.DefaultSSHPort
+				} else if portResult.Port == 22 {
+					device.Port22 = true
+					if device.SSHPort == 0 {
+						device.SSHPort = 22
+					}
 				}
 				if portResult.Port == 23 {
 					device.Port23 = true
@@ -248,14 +263,14 @@ func ScanSingleHost(ctx context.Context, ip string) (*Device, error) {
 }
 
 // scanIPWithTimeout scans an IP address with a timeout context
-func scanIPWithTimeout(ctx context.Context, ip string) (*gomap.IPScanResult, error) {
+func scanIPWithTimeout(ctx context.Context, ip string, portsToScan map[int]string) (*gomap.IPScanResult, error) {
 	// Channel to receive the scan result
 	resultChan := make(chan *gomap.IPScanResult, 1)
 	errorChan := make(chan error, 1)
-
+	defaultport := settings.Current.DefaultSSHPort
 	// Start the scan in a goroutine
 	go func() {
-		result, err := gomap.ScanIP(ip, "tcp", true, false) // fastscan=true, stealth=false
+		result, err := gomap.ScanIP(ip, "tcp", true, false, defaultport) // fastscan=true, stealth=false
 		if err != nil {
 			errorChan <- err
 			return

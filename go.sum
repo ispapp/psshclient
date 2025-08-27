@@ -26,8 +26,6 @@ github.com/fyne-io/image v0.1.1 h1:WH0z4H7qfvNUw5l4p3bC1q70sa5+YWVt6HCj7y4VNyA=
 github.com/fyne-io/image v0.1.1/go.mod h1:xrfYBh6yspc+KjkgdZU/ifUC9sPA5Iv7WYUBzQKK7JM=
 github.com/fyne-io/oksvg v0.1.0 h1:7EUKk3HV3Y2E+qypp3nWqMXD7mum0hCw2KEGhI1fnBw=
 github.com/fyne-io/oksvg v0.1.0/go.mod h1:dJ9oEkPiWhnTFNCmRgEze+YNprJF7YRbpjgpWS4kzoI=
-github.com/fyne-io/terminal v0.0.0-20250805210206-f3224d514e14 h1:PHhWPqj/HrbedQmBjTlTtj+nLMoGnJAp6c1dtcQO2cs=
-github.com/fyne-io/terminal v0.0.0-20250805210206-f3224d514e14/go.mod h1:v8sWv/YhgV3ylagXLXZTa2VIBDQwzDsleVIm3TbQ0ls=
 github.com/go-gl/gl v0.0.0-20231021071112-07e5d0ea2e71 h1:5BVwOaUSBTlVZowGO6VZGw2H/zl9nrd3eCZfYV+NfQA=
 github.com/go-gl/gl v0.0.0-20231021071112-07e5d0ea2e71/go.mod h1:9YTyiznxEY1fVinfM7RvRcjRHbw2xLBJ3AAGIT0I4Nw=
 github.com/go-gl/glfw/v3.3/glfw v0.0.0-20240506104042-037f3cc74f2a h1:vxnBhFDDT+xzxf1jTJKMKZw3H0swfWk9RpWbBbDK5+0=
@@ -50,6 +48,8 @@ github.com/jeandeaual/go-locale v0.0.0-20250612000132-0ef82f21eade h1:FmusiCI1wH
 github.com/jeandeaual/go-locale v0.0.0-20250612000132-0ef82f21eade/go.mod h1:ZDXo8KHryOWSIqnsb/CiDq7hQUYryCgdVnxbj8tDG7o=
 github.com/jsummers/gobmp v0.0.0-20230614200233-a9de23ed2e25 h1:YLvr1eE6cdCqjOe972w/cYF+FjW34v27+9Vo5106B4M=
 github.com/jsummers/gobmp v0.0.0-20230614200233-a9de23ed2e25/go.mod h1:kLgvv7o6UM+0QSf0QjAse3wReFDsb9qbZJdfexWlrQw=
+github.com/kmoz000/terminal v0.0.0-20250825235911-78cef3d4268f h1:CgzK16hFx+2QMUbfFQE5xPXr3RTxgm5wolyqFolVr3E=
+github.com/kmoz000/terminal v0.0.0-20250825235911-78cef3d4268f/go.mod h1:v8sWv/YhgV3ylagXLXZTa2VIBDQwzDsleVIm3TbQ0ls=
 github.com/kr/text v0.2.0 h1:5Nx0Ya0ZqY2ygV366QzturHI13Jq95ApcVaJBhpS+AY=
 github.com/kr/text v0.2.0/go.mod h1:eLer722TekiGuMkidMxC/pM04lWEeraHUUmBw8l2grE=
 github.com/mattn/go-sqlite3 v1.14.32 h1:JD12Ag3oLy1zQA+BNn74xRgaBbdhbNIDYvQUEuuErjs=
