@@ -47,4 +47,4 @@ require (
 )
 
 replace github.com/fyne-io/terminal => github.com/kmoz000/terminal v0.0.0-20250825235911-78cef3d4268f
-replace github.com/ispapp/psshclient => ./
+replace github.com/ispapp/psshclient/pkg/gomap => ./pkg/gomap
