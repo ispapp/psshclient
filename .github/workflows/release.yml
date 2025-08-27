@@ -37,15 +37,13 @@ jobs:
       - name: Install fyne-cross
         run: go install github.com/fyne-io/fyne-cross@latest
 
-      - name: Pull latest Docker images
-        if: matrix.platform.os == 'ubuntu-latest'
-        run: fyne-cross --pull
-
       - name: Build for each target
         run: |
+          mkdir -p dist
+          go mod tidy
           VERSION=${GITHUB_REF_NAME#v}
           for target in ${{ join(matrix.platform.targets, ' ') }}; do
-            fyne-cross $target -arch=* -output app -app-version $VERSION -app-id com.example.app
+            fyne-cross $target -arch=* -output app -app-version $VERSION -app-id co.ispapp.psshclient
           done
 
       - name: Upload build artifacts
