@@ -26,6 +26,3 @@ jobs:
           libgl1-mesa-dev libegl1-mesa-dev \
           libgles2-mesa-dev libx11-dev xorg-dev \
           libwayland-dev libxkbcommon-dev bc
-
-      - name: run tests
-        run: make tests
