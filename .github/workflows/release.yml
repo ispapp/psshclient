@@ -59,7 +59,7 @@ jobs:
         run: make build-mac
       
       - name: Zip App
-        run: zip -vr muscurdi_macos.zip bin/pssclient.app -x "*.DS_Store" && mv muscurdi_macos.zip bin/
+        run: zip -vr pssclient_macos.zip bin/pssclient.app -x "*.DS_Store" && mv pssclient_macos.zip bin/
 
       - name: Upload MacOS Bin
         uses: djn24/add-asset-to-release@v1
