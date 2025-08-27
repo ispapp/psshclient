@@ -51,6 +51,8 @@ jobs:
 
       - name: Setup Go
         uses: actions/setup-go@v4
+        with:
+          go-version: '1.24.5'
 
       - name: Install FyneCLi tool
         run: go install fyne.io/fyne/v2/cmd/fyne@latest
@@ -77,6 +79,8 @@ jobs:
 
       - name: Setup Go
         uses: actions/setup-go@v4
+        with:
+          go-version: '1.24.5'
       
       - name: Set up MinGW
         uses: egor-tensin/setup-mingw@v2
