@@ -386,3 +386,28 @@ func loadPrivateKeyFromFile(keyPath string) (ssh.Signer, error) {
 
 	return signer, nil
 }
+
+// RunCommand runs a command on the remote server and returns its output
+func (conn *SSHConnection) RunCommand(command string) (string, error) {
+	conn.mutex.Lock()
+	defer conn.mutex.Unlock()
+
+	if !conn.Connected || conn.Client == nil {
+		return "", fmt.Errorf("not connected")
+	}
+
+	// Create a new session for this command
+	session, err := conn.Client.NewSession()
+	if err != nil {
+		return "", fmt.Errorf("failed to create session: %w", err)
+	}
+	defer session.Close()
+
+	// Run the command and capture the output
+	output, err := session.CombinedOutput(command)
+	if err != nil {
+		return "", fmt.Errorf("failed to run command: %w", err)
+	}
+
+	return string(output), nil
+}

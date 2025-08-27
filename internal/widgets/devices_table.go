@@ -314,6 +314,37 @@ func createSSHControls(selectedDevices map[int]bool, sshManager *pssh.SSHManager
 		}
 	})
 
+	// Multi-Device Script Runner button
+	runScriptBtn := widget.NewButtonWithIcon("Run Script", theme.MediaPlayIcon(), func() {
+		var connections []*pssh.SSHConnection
+
+		// Get connected devices that are selected
+		for deviceIndex, selected := range selectedDevices {
+			if !selected {
+				continue
+			}
+
+			if deviceIndex < data.DeviceList.Length() {
+				if deviceObj, err := data.DeviceList.GetValue(deviceIndex); err == nil {
+					if device, ok := deviceObj.(scanner.Device); ok && device.Connected {
+						// Get the SSH connection from the shared manager
+						if conn, exists := sshManager.GetConnection(device.IP); exists {
+							connections = append(connections, conn)
+						}
+					}
+				}
+			}
+		}
+
+		if len(connections) == 0 {
+			dialog.ShowInformation("No SSH Connections",
+				"Please connect to and select devices first.", parentWindow)
+			return
+		}
+
+		showScriptDialog(connections, parentWindow, app)
+	})
+
 	// Select All SSH button
 	selectAllSSHBtn := widget.NewButtonWithIcon("Select All SSH", theme.ConfirmIcon(), func() {
 		// Clear current selection
@@ -407,6 +438,7 @@ func createSSHControls(selectedDevices map[int]bool, sshManager *pssh.SSHManager
 		clearSelectionBtn,
 		widget.NewSeparator(),
 		sshTerminalBtn,
+		runScriptBtn,
 	)
 
 	// Combine both sections with a separator
@@ -415,6 +447,80 @@ func createSSHControls(selectedDevices map[int]bool, sshManager *pssh.SSHManager
 		fyne.NewSize(parrentwidth, 24),
 		container.NewHBox(widget.NewSeparator(), widget.NewIcon(theme.StorageIcon()), dbControls, widget.NewIcon(theme.ComputerIcon()), sshControls),
 	)
+}
+
+// showScriptDialog shows a dialog to run a script on multiple devices
+func showScriptDialog(connections []*pssh.SSHConnection, parent fyne.Window, app fyne.App) {
+	scriptInput := widget.NewMultiLineEntry()
+	scriptInput.SetPlaceHolder("Enter script to run on all selected devices...")
+	scriptInput.SetMinRowsVisible(10)
+	scriptInput.Wrapping = fyne.TextWrapOff
+
+	outputBox := container.NewVBox()
+	outputScroll := container.NewVScroll(outputBox)
+	outputScroll.SetMinSize(fyne.NewSize(600, 300))
+
+	var runBtn *widget.Button
+	runBtn = widget.NewButton("Run Script", func() {
+		script := scriptInput.Text
+		if script == "" {
+			return
+		}
+
+		runBtn.Disable()
+		outputBox.RemoveAll()
+		progress := widget.NewProgressBarInfinite()
+		outputBox.Add(progress)
+
+		go func() {
+			var results []string
+			var mu sync.Mutex
+			var wg sync.WaitGroup
+
+			for _, conn := range connections {
+				wg.Add(1)
+				go func(c *pssh.SSHConnection) {
+					defer wg.Done()
+					output, err := c.RunCommand(script)
+					var resultText string
+					if err != nil {
+						resultText = fmt.Sprintf("--- ERROR on %s ---\n%s\n", c.Config.Host, err.Error())
+					} else {
+						resultText = fmt.Sprintf("--- Output from %s ---\n%s\n", c.Config.Host, output)
+					}
+					mu.Lock()
+					results = append(results, resultText)
+					mu.Unlock()
+				}(conn)
+			}
+			wg.Wait()
+
+			// UI updates can be done directly, but need to be refreshed
+			runBtn.Enable()
+			outputBox.RemoveAll()
+			var fullOutput string
+			for _, res := range results {
+				fullOutput += res + "\n"
+			}
+			// Use a single label with wrapped text for the full output
+			outputLabel := widget.NewLabel(fullOutput)
+			outputLabel.Wrapping = fyne.TextWrapWord
+			outputBox.Add(outputLabel)
+			outputBox.Refresh()
+		}()
+	})
+
+	content := container.NewVBox(
+		widget.NewLabel("Enter script:"),
+		scriptInput,
+		runBtn,
+		widget.NewLabel("Output:"),
+		outputScroll,
+	)
+
+	d := dialog.NewCustom("Run Script", "Close", content, parent)
+	d.Resize(fyne.NewSize(700, 500))
+	d.Show()
 }
 
 // showUsernameDialog shows a dialog to enter username for a device

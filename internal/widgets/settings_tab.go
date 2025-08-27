@@ -138,13 +138,13 @@ func CreateSettingsTab(parentWindow fyne.Window) *container.Scroll {
 			for _, err := range errors {
 				errorMsg += "• " + err + "\n"
 			}
-			dialog.ShowError(fmt.Errorf(errorMsg), parentWindow)
+			dialog.ShowError(fmt.Errorf("%s", errorMsg), parentWindow)
 			return
 		}
 
 		// Save settings
 		if err := settings.Save(); err != nil {
-			dialog.ShowError(fmt.Errorf("Failed to save settings: %v", err), parentWindow)
+			dialog.ShowError(fmt.Errorf("failed to save settings: %v", err), parentWindow)
 			return
 		}
 
