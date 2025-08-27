@@ -3,6 +3,9 @@ name: On Release Published
 on:
   release:
     types: [created]
+  push:
+    branches:
+      - main
 
 jobs:
   publish-binaries-linux:
@@ -11,12 +14,15 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v1
+        uses: actions/checkout@v4
 
       - name: Setup Go
         uses: actions/setup-go@v4
         with:
           go-version: '1.24.5'
+
+      - name: Tidy modules
+        run: go mod tidy
 
       - name: Get dependencies
         run: |
@@ -47,12 +53,15 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v1
+        uses: actions/checkout@v4
 
       - name: Setup Go
         uses: actions/setup-go@v4
         with:
           go-version: '1.24.5'
+
+      - name: Tidy modules
+        run: go mod tidy
 
       - name: Install FyneCLi tool
         run: go install fyne.io/tools/cmd/fyne@latest
@@ -75,17 +84,18 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v1
+        uses: actions/checkout@v4
 
       - name: Setup Go
         uses: actions/setup-go@v4
         with:
           go-version: '1.24.5'
       
-      - name: Set up MinGW
-        uses: egor-tensin/setup-mingw@v2
-        with:
-          platform: x64
+      - name: Tidy modules
+        run: go mod tidy
+
+      - name: Install Fyne dependencies
+        run: fyne install
 
       - name: Install FyneCLi tool
         run: go install fyne.io/tools/cmd/fyne@latest
