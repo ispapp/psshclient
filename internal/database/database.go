@@ -3,7 +3,7 @@ package database
 import (
 	"database/sql"
 	"fmt"
-	"ispappclient/internal/scanner"
+	"github.com/ispapp/psshclient/internal/scanner"
 	"os"
 	"path/filepath"
 	"time"

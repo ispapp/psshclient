@@ -1,8 +1,8 @@
 package main
 
 import (
-	"ispappclient/internal/ui"
-	"ispappclient/internal/ui/theme"
+	"github.com/ispapp/psshclient/internal/ui"
+	"github.com/ispapp/psshclient/internal/ui/theme"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"

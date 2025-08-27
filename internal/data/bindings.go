@@ -2,9 +2,9 @@ package data
 
 import (
 	"fmt"
-	"ispappclient/internal/database"
-	"ispappclient/internal/scanner"
-	"ispappclient/internal/settings"
+	"github.com/ispapp/psshclient/internal/database"
+	"github.com/ispapp/psshclient/internal/scanner"
+	"github.com/ispapp/psshclient/internal/settings"
 	"log"
 	"os"
 	"path/filepath"

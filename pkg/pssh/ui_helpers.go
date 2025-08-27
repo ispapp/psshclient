@@ -2,7 +2,7 @@ package pssh
 
 import (
 	"fmt"
-	"ispappclient/internal/resources"
+	"github.com/ispapp/psshclient/internal/resources"
 	"time"
 
 	"fyne.io/fyne/v2"

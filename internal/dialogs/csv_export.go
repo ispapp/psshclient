@@ -3,7 +3,7 @@ package dialogs
 import (
 	"encoding/csv"
 	"fmt"
-	"ispappclient/internal/data"
+	"github.com/ispapp/psshclient/internal/data"
 	"strconv"
 
 	"fyne.io/fyne/v2"

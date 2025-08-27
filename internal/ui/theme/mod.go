@@ -2,7 +2,7 @@ package theme
 
 import (
 	"image/color"
-	"ispappclient/internal/resources"
+	"github.com/ispapp/psshclient/internal/resources"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/theme"

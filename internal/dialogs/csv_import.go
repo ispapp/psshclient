@@ -4,9 +4,9 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
-	"ispappclient/internal/data"
-	"ispappclient/internal/scanner"
-	"ispappclient/internal/settings"
+	"github.com/ispapp/psshclient/internal/data"
+	"github.com/ispapp/psshclient/internal/scanner"
+	"github.com/ispapp/psshclient/internal/settings"
 	"strconv"
 	"strings"
 

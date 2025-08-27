@@ -1,4 +1,4 @@
-module ispappclient
+module github.com/ispapp/psshclient
 
 go 1.24.5
 

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"ispappclient/pkg/pssh"
+	"github.com/ispapp/psshclient/pkg/pssh"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"

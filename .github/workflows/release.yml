@@ -27,7 +27,7 @@ jobs:
           libwayland-dev libxkbcommon-dev bc
 
       - name: Install FyneCLi tool
-        run: go install fyne.io/fyne/v2/cmd/fyne@latest
+        run: go install fyne.io/tools/cmd/fyne@latest
 
       - name: Build
         run: make build-linux
@@ -55,7 +55,7 @@ jobs:
           go-version: '1.24.5'
 
       - name: Install FyneCLi tool
-        run: go install fyne.io/fyne/v2/cmd/fyne@latest
+        run: go install fyne.io/tools/cmd/fyne@latest
 
       - name: Build
         run: make build-mac
@@ -88,7 +88,7 @@ jobs:
           platform: x64
 
       - name: Install FyneCLi tool
-        run: go install fyne.io/fyne/v2/cmd/fyne@latest
+        run: go install fyne.io/tools/cmd/fyne@latest
 
       - name: Build
         run: make build-win

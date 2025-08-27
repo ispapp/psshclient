@@ -2,7 +2,7 @@ package widgets
 
 import (
 	"fmt"
-	"ispappclient/internal/settings"
+	"github.com/ispapp/psshclient/internal/settings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"

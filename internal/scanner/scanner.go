@@ -3,11 +3,12 @@ package scanner
 import (
 	"context"
 	"fmt"
-	"ispappclient/internal/settings"
-	"ispappclient/pkg/gomap"
 	"net"
 	"sync"
 	"time"
+
+	"github.com/ispapp/psshclient/internal/settings"
+	"github.com/ispapp/psshclient/pkg/gomap"
 )
 
 // Device represents a discovered device

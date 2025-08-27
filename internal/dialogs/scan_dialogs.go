@@ -3,8 +3,8 @@ package dialogs
 import (
 	"context"
 	"fmt"
-	"ispappclient/internal/data"
-	"ispappclient/internal/scanner"
+	"github.com/ispapp/psshclient/internal/data"
+	"github.com/ispapp/psshclient/internal/scanner"
 	"time"
 
 	"fyne.io/fyne/v2"

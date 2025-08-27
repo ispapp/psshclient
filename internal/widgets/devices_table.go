@@ -2,10 +2,10 @@ package widgets
 
 import (
 	"fmt"
-	"ispappclient/internal/data"
-	"ispappclient/internal/scanner"
-	"ispappclient/internal/settings"
-	"ispappclient/pkg/pssh"
+	"github.com/ispapp/psshclient/internal/data"
+	"github.com/ispapp/psshclient/internal/scanner"
+	"github.com/ispapp/psshclient/internal/settings"
+	"github.com/ispapp/psshclient/pkg/pssh"
 	"strconv"
 	"sync"
 

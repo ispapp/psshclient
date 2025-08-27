@@ -1,10 +1,10 @@
 package ui
 
 import (
-	"ispappclient/internal/data"
-	"ispappclient/internal/dialogs"
-	"ispappclient/internal/settings"
-	"ispappclient/internal/widgets"
+	"github.com/ispapp/psshclient/internal/data"
+	"github.com/ispapp/psshclient/internal/dialogs"
+	"github.com/ispapp/psshclient/internal/settings"
+	"github.com/ispapp/psshclient/internal/widgets"
 	"log"
 
 	"fyne.io/fyne/v2"
