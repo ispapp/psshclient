@@ -1,6 +1,12 @@
 name: Release
 
 on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Test version (e.g., 1.0.0)'
+        required: true
+        default: 'test'
   push:
     tags:
       - 'v*'
