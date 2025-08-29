@@ -14,15 +14,15 @@ import (
 
 // Device represents a discovered device
 type Device struct {
-	IP        string
-	Hostname  string
-	Port22    bool
-	Port23    bool
-	SSHPort   int // SSH port
-	Status    string
-	Username  string // SSH username
-	Password  string // SSH password
-	Connected bool   // SSH connection status
+	IP           string
+	Hostname     string
+	SSHStatus    bool
+	TELNETStatus bool
+	SSHPort      int // SSH port
+	Status       string
+	Username     string // SSH username
+	Password     string // SSH password
+	Connected    bool   // SSH connection status
 }
 
 // PortResult represents the structure that gomap returns for each port
@@ -127,16 +127,16 @@ func ScanSubnet(ctx context.Context, subnet string, progressCallback func(string
 					hasOpenPort = true
 					// Check for the default SSH port from settings
 					if portResult.Port == settings.Current.DefaultSSHPort {
-						device.Port22 = true
+						device.SSHStatus = true
 						device.SSHPort = settings.Current.DefaultSSHPort
 					} else if portResult.Port == 22 { // Also check for standard SSH port
-						device.Port22 = true
+						device.SSHStatus = true
 						if device.SSHPort == 0 { // Don't override default from settings
 							device.SSHPort = 22
 						}
 					}
 					if portResult.Port == 23 {
-						device.Port23 = true
+						device.TELNETStatus = true
 					}
 				}
 			}
@@ -307,16 +307,16 @@ func ScanSingleHost(ctx context.Context, ip string) (*Device, error) {
 		for _, portResult := range result.Results {
 			if portResult.State {
 				if portResult.Port == settings.Current.DefaultSSHPort {
-					device.Port22 = true
+					device.SSHStatus = true
 					device.SSHPort = settings.Current.DefaultSSHPort
 				} else if portResult.Port == 22 {
-					device.Port22 = true
+					device.SSHStatus = true
 					if device.SSHPort == 0 {
 						device.SSHPort = 22
 					}
 				}
 				if portResult.Port == 23 {
-					device.Port23 = true
+					device.TELNETStatus = true
 				}
 			}
 		}

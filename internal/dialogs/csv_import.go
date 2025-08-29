@@ -117,7 +117,7 @@ func ShowCSVImportDialog(parent fyne.Window) {
 					case 3: // Port
 						label.SetText(device.OriginalPort)
 					case 4: // Service
-						if device.Device.Port22 {
+						if device.Device.SSHStatus {
 							label.SetText("SSH")
 						} else {
 							label.SetText("-")
@@ -344,10 +344,10 @@ func validateCSVRecord(record []string, rowNum int) CSVDevice {
 
 	// Set port flags based on service
 	if service == "ssh" {
-		device.Port22 = true // Mark as SSH capable regardless of actual port
+		device.SSHStatus = true // Mark as SSH capable regardless of actual port
 	}
 	if service == "telnet" {
-		device.Port23 = true
+		device.TELNETStatus = true
 	}
 
 	csvDevice.Device = device

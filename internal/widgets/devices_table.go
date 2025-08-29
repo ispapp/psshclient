@@ -77,7 +77,7 @@ func CreateDevicesTableWithWindow(parentWindow fyne.Window, app fyne.App) *fyne.
 								label.SetText(device.Hostname)
 
 							case 3: // SSH Status
-								if device.Port22 {
+								if device.SSHStatus {
 									if device.Connected {
 										label.SetText("✓ Connected")
 									} else {
@@ -87,7 +87,7 @@ func CreateDevicesTableWithWindow(parentWindow fyne.Window, app fyne.App) *fyne.
 									label.SetText("✗ Closed")
 								}
 							case 4: // SSH Port
-								if device.Port22 {
+								if device.SSHStatus {
 									if device.SSHPort == 0 {
 										device.SSHPort = settings.Current.DefaultSSHPort
 									}
@@ -97,14 +97,14 @@ func CreateDevicesTableWithWindow(parentWindow fyne.Window, app fyne.App) *fyne.
 								}
 
 							case 5: // Username
-								if device.Port22 {
+								if device.SSHStatus {
 									label.SetText(device.Username)
 								} else {
 									label.SetText("-")
 								}
 
 							case 6: // Password
-								if device.Port22 {
+								if device.SSHStatus {
 									if device.Password != "" {
 										label.SetText("●●●●●●")
 									} else {
@@ -118,7 +118,7 @@ func CreateDevicesTableWithWindow(parentWindow fyne.Window, app fyne.App) *fyne.
 								label.SetText(device.Status)
 
 							case 8: // Actions
-								if device.Port22 {
+								if device.SSHStatus {
 									if device.Connected {
 										label.SetText("🔌 Disconnect")
 									} else {
@@ -148,7 +148,7 @@ func CreateDevicesTableWithWindow(parentWindow fyne.Window, app fyne.App) *fyne.
 			case 4: // SSH Port column - show entry dialog
 				if deviceIndex < data.DeviceList.Length() {
 					if deviceObj, err := data.DeviceList.GetValue(deviceIndex); err == nil {
-						if device, ok := deviceObj.(scanner.Device); ok && device.Port22 {
+						if device, ok := deviceObj.(scanner.Device); ok && device.SSHStatus {
 							showSSHPortDialog(deviceIndex, device.SSHPort, parentWindow, table)
 						}
 					}
@@ -156,7 +156,7 @@ func CreateDevicesTableWithWindow(parentWindow fyne.Window, app fyne.App) *fyne.
 			case 5: // Username column - show entry dialog
 				if deviceIndex < data.DeviceList.Length() {
 					if deviceObj, err := data.DeviceList.GetValue(deviceIndex); err == nil {
-						if device, ok := deviceObj.(scanner.Device); ok && device.Port22 {
+						if device, ok := deviceObj.(scanner.Device); ok && device.SSHStatus {
 							showUsernameDialog(deviceIndex, device.Username, parentWindow, table)
 						}
 					}
@@ -164,7 +164,7 @@ func CreateDevicesTableWithWindow(parentWindow fyne.Window, app fyne.App) *fyne.
 			case 6: // Password column - show entry dialog
 				if deviceIndex < data.DeviceList.Length() {
 					if deviceObj, err := data.DeviceList.GetValue(deviceIndex); err == nil {
-						if device, ok := deviceObj.(scanner.Device); ok && device.Port22 {
+						if device, ok := deviceObj.(scanner.Device); ok && device.SSHStatus {
 							showPasswordDialog(deviceIndex, device.Password, parentWindow, table)
 						}
 					}
@@ -172,7 +172,7 @@ func CreateDevicesTableWithWindow(parentWindow fyne.Window, app fyne.App) *fyne.
 			case 8: // Actions column - connect/disconnect
 				if deviceIndex < data.DeviceList.Length() {
 					if deviceObj, err := data.DeviceList.GetValue(deviceIndex); err == nil {
-						if device, ok := deviceObj.(scanner.Device); ok && device.Port22 {
+						if device, ok := deviceObj.(scanner.Device); ok && device.SSHStatus {
 							connectToDevice(deviceIndex, sshManager, parentWindow, table)
 						}
 					}
@@ -259,7 +259,7 @@ func getSSHDeviceCount() int {
 
 	for i := 0; i < deviceCount; i++ {
 		if deviceObj, err := data.DeviceList.GetValue(i); err == nil {
-			if device, ok := deviceObj.(scanner.Device); ok && device.Port22 {
+			if device, ok := deviceObj.(scanner.Device); ok && device.SSHStatus {
 				count++
 			}
 		}
@@ -358,7 +358,7 @@ func createSSHControls(selectedDevices map[int]bool, sshManager *pssh.SSHManager
 		selectedCount := 0
 		for i := 0; i < deviceCount; i++ {
 			if deviceObj, err := data.DeviceList.GetValue(i); err == nil {
-				if device, ok := deviceObj.(scanner.Device); ok && device.Port22 {
+				if device, ok := deviceObj.(scanner.Device); ok && device.SSHStatus {
 					selectedDevices[i] = true
 					selectedCount++
 				}
