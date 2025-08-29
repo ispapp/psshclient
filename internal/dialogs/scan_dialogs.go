@@ -3,9 +3,12 @@ package dialogs
 import (
 	"context"
 	"fmt"
+	"slices"
+	"sync"
+	"time"
+
 	"github.com/ispapp/psshclient/internal/data"
 	"github.com/ispapp/psshclient/internal/scanner"
-	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -45,7 +48,7 @@ func ShowSubnetScanDialog(parent fyne.Window) {
 func StartSubnetScan(subnet string, parent fyne.Window) {
 	// Clear previous results and set scanning state in main thread
 	fyne.Do(func() {
-		data.ClearDevices()
+		// data.ClearDevices()
 		data.SetScanning(true)
 		data.SetScanProgress("Starting scan...")
 	})
@@ -120,10 +123,22 @@ func StartSubnetScan(subnet string, parent fyne.Window) {
 		}
 
 		// Add devices to global list
-		for _, device := range devices {
-			data.AddDevice(device)
+		olddevices := data.GetDevices()
+		ips := make([]string, 0, len(olddevices))
+		for _, device := range olddevices {
+			ips = append(ips, device.IP)
 		}
-
+		var wg sync.WaitGroup
+		for _, device := range devices {
+			wg.Add(1)
+			go func(d scanner.Device) {
+				defer wg.Done()
+				if !slices.Contains(ips, d.IP) {
+					data.AddDevice(d)
+				}
+			}(device)
+		}
+		wg.Wait()
 		fyne.Do(func() {
 			data.SetScanProgress("Scan completed successfully")
 		})

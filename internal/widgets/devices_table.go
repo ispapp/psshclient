@@ -2,12 +2,13 @@ package widgets
 
 import (
 	"fmt"
+	"strconv"
+	"sync"
+
 	"github.com/ispapp/psshclient/internal/data"
 	"github.com/ispapp/psshclient/internal/scanner"
 	"github.com/ispapp/psshclient/internal/settings"
 	"github.com/ispapp/psshclient/pkg/pssh"
-	"strconv"
-	"sync"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -346,7 +347,7 @@ func createSSHControls(selectedDevices map[int]bool, sshManager *pssh.SSHManager
 	})
 
 	// Select All SSH button
-	selectAllSSHBtn := widget.NewButtonWithIcon("Select All SSH", theme.ConfirmIcon(), func() {
+	selectAllSSHBtn := widget.NewButtonWithIcon("Select All", theme.ConfirmIcon(), func() {
 		// Clear current selection
 		for k := range selectedDevices {
 			delete(selectedDevices, k)
@@ -411,7 +412,7 @@ func createSSHControls(selectedDevices map[int]bool, sshManager *pssh.SSHManager
 	})
 
 	// Clear Database button - clears all devices from database
-	clearDBBtn := widget.NewButtonWithIcon("Clear DB", theme.DeleteIcon(), func() {
+	clearDBBtn := widget.NewButtonWithIcon("Clear", theme.DeleteIcon(), func() {
 		dialog.ShowConfirm("Clear Database",
 			"Are you sure you want to clear all devices from the database? This cannot be undone.",
 			func(confirmed bool) {

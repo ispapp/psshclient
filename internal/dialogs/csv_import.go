@@ -4,11 +4,12 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
+	"strconv"
+	"strings"
+
 	"github.com/ispapp/psshclient/internal/data"
 	"github.com/ispapp/psshclient/internal/scanner"
 	"github.com/ispapp/psshclient/internal/settings"
-	"strconv"
-	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"

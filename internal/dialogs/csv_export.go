@@ -3,8 +3,9 @@ package dialogs
 import (
 	"encoding/csv"
 	"fmt"
-	"github.com/ispapp/psshclient/internal/data"
 	"strconv"
+
+	"github.com/ispapp/psshclient/internal/data"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/dialog"
@@ -35,7 +36,7 @@ func ShowCSVExportDialog(parent fyne.Window) {
 		defer csvWriter.Flush()
 
 		// Write header row
-		headers := []string{"IP Address", "Hostname", "SSH Port", "Username", "Password", "Status"}
+		headers := []string{"IP Address", "Hostname", "Username", "Password", "SSH Port", "Status"}
 		if err := csvWriter.Write(headers); err != nil {
 			dialog.ShowError(fmt.Errorf("failed to write CSV header: %v", err), parent)
 			return
@@ -46,9 +47,9 @@ func ShowCSVExportDialog(parent fyne.Window) {
 			record := []string{
 				device.IP,
 				device.Hostname,
-				strconv.Itoa(device.SSHPort),
 				device.Username,
 				device.Password,
+				strconv.Itoa(device.SSHPort),
 				device.Status,
 			}
 			if err := csvWriter.Write(record); err != nil {
