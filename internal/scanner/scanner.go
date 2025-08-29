@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -33,18 +34,16 @@ type PortResult struct {
 }
 
 // ScanSubnet scans a subnet for devices with SSH (22) or Telnet (23) ports open
+// Supports both CIDR notation (e.g., 10.10.0.0/24) and IP ranges (e.g., 10.10.0.0-10.10.2.254)
 func ScanSubnet(ctx context.Context, subnet string, progressCallback func(string)) ([]Device, error) {
 	var devices []Device
 	var devicesMutex sync.Mutex
 
-	// Parse subnet
-	_, ipNet, err := net.ParseCIDR(subnet)
+	// Generate IP list from subnet (supports both CIDR and range formats)
+	ips, err := parseSubnetInput(subnet)
 	if err != nil {
-		return nil, fmt.Errorf("invalid subnet format: %v", err)
+		return nil, fmt.Errorf("invalid subnet/range format: %v", err)
 	}
-
-	// Generate IP list from subnet
-	ips := generateIPList(ipNet)
 
 	progressCallback(fmt.Sprintf("Scanning %d hosts in %s...", len(ips), subnet))
 
@@ -204,6 +203,69 @@ func ipToInt(ip net.IP) uint32 {
 // intToIP converts an integer to IP address
 func intToIP(i uint32) net.IP {
 	return net.IPv4(byte(i>>24), byte(i>>16), byte(i>>8), byte(i))
+}
+
+// parseSubnetInput parses subnet input that can be either CIDR notation or IP range
+// Supports formats like "10.10.0.0/24" or "10.10.0.0-10.10.2.254"
+func parseSubnetInput(input string) ([]string, error) {
+	// Check if it's an IP range (contains a dash)
+	if strings.Contains(input, "-") {
+		return parseIPRange(input)
+	}
+
+	// Otherwise, treat it as CIDR notation
+	return parseCIDR(input)
+}
+
+// parseCIDR parses CIDR notation and returns list of IP addresses
+func parseCIDR(cidr string) ([]string, error) {
+	_, ipNet, err := net.ParseCIDR(cidr)
+	if err != nil {
+		return nil, err
+	}
+	return generateIPList(ipNet), nil
+}
+
+// parseIPRange parses IP range format like "10.10.0.0-10.10.2.254"
+func parseIPRange(rangeStr string) ([]string, error) {
+	parts := strings.Split(rangeStr, "-")
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("invalid range format, expected 'start-end'")
+	}
+
+	startIP := net.ParseIP(strings.TrimSpace(parts[0]))
+	endIP := net.ParseIP(strings.TrimSpace(parts[1]))
+
+	if startIP == nil {
+		return nil, fmt.Errorf("invalid start IP address: %s", parts[0])
+	}
+	if endIP == nil {
+		return nil, fmt.Errorf("invalid end IP address: %s", parts[1])
+	}
+
+	// Convert to IPv4
+	startIP = startIP.To4()
+	endIP = endIP.To4()
+
+	if startIP == nil || endIP == nil {
+		return nil, fmt.Errorf("IPv6 ranges are not supported")
+	}
+
+	// Convert IPs to integers for range calculation
+	start := ipToInt(startIP)
+	end := ipToInt(endIP)
+
+	if start > end {
+		return nil, fmt.Errorf("start IP must be less than or equal to end IP")
+	}
+
+	// Generate IP list
+	var ips []string
+	for i := start; i <= end; i++ {
+		ips = append(ips, intToIP(i).String())
+	}
+
+	return ips, nil
 }
 
 // ScanSingleHost scans a single host for SSH/Telnet ports
