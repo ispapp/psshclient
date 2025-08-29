@@ -91,24 +91,26 @@ jobs:
             -app-version ${{ steps.version.outputs.VERSION }} \
             -app-id co.ispapp.psshclient \
             -icon ./Icon.png \
-            -name psshclient${{ matrix.target.ext }} \
-            -output ./dist/
+            -name psshclient${{ matrix.target.ext }}
 
       - name: Create release archive
         run: |
-          cd dist
+          # fyne-cross outputs to fyne-cross/dist/{os}-{arch}/ by default
+          BUILD_DIR="fyne-cross/dist/${{ matrix.target.os }}-*"
           if [ "${{ matrix.target.archive }}" = "zip" ]; then
-            zip -r psshclient-${{ matrix.target.os }}-${{ steps.version.outputs.VERSION }}.zip *
+            cd fyne-cross/dist/${{ matrix.target.os }}-*
+            zip -r ../../../psshclient-${{ matrix.target.os }}-${{ steps.version.outputs.VERSION }}.zip *
           else
-            tar -czf psshclient-${{ matrix.target.os }}-${{ steps.version.outputs.VERSION }}.tar.gz *
+            cd fyne-cross/dist/${{ matrix.target.os }}-*
+            tar -czf ../../../psshclient-${{ matrix.target.os }}-${{ steps.version.outputs.VERSION }}.tar.gz *
           fi
-          ls -la
+          ls -la *.tar.gz *.zip 2>/dev/null || true
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: psshclient-${{ matrix.target.os }}
-          path: dist/psshclient-${{ matrix.target.os }}-${{ steps.version.outputs.VERSION }}.*
+          path: psshclient-${{ matrix.target.os }}-${{ steps.version.outputs.VERSION }}.*
           retention-days: 1
 
   # Build native macOS ARM64 on macos-latest (Apple Silicon)
