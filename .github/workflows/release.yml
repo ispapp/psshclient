@@ -60,7 +60,7 @@ jobs:
       - name: Install fyne-cross
         run: go install github.com/fyne-io/fyne-cross@latest
 
-      - name: Install Fyne
+      - name: Install Fyne (new tool)
         run: go install fyne.io/fyne/v2/cmd/fyne@latest
 
       - name: Install Docker (macOS)
@@ -84,14 +84,14 @@ jobs:
 
       - name: Build with fyne-cross
         run: |
-          mkdir -p dist
           fyne-cross \
             ${{ matrix.target.os }} \
             -debug -no-cache \
             -app-version ${{ steps.version.outputs.VERSION }} \
             -app-id co.ispapp.psshclient \
             -icon ./Icon.png \
-            -name psshclient${{ matrix.target.ext }}
+            -name psshclient${{ matrix.target.ext }} \
+            .
 
       - name: Create release archive
         run: |
@@ -137,7 +137,7 @@ jobs:
             ~/.cache/go-build
           key: ${{ runner.os }}-arm64-build-cache-${{ hashFiles('**/go.sum') }}
 
-      - name: Install Fyne
+      - name: Install Fyne (new tool)
         run: go install fyne.io/fyne/v2/cmd/fyne@latest
 
       - name: Set version
@@ -163,9 +163,13 @@ jobs:
         run: |
           mkdir -p dist
           go build -ldflags "-s -w" -o dist/psshclient .
+          # Package from the root directory, not from dist
+          fyne package -os darwin -icon ./Icon.png -name psshclient \
+            -appVersion ${{ steps.version.outputs.VERSION }} -appID co.ispapp.psshclient \
+            -executable dist/psshclient
+          # Move the package to dist and create archive
+          mv psshclient.app dist/
           cd dist
-          fyne package -os darwin -icon ../Icon.png -name psshclient \
-            -appVersion ${{ steps.version.outputs.VERSION }} -appID co.ispapp.psshclient
           tar -czf psshclient-darwin-arm64-${{ steps.version.outputs.VERSION }}.tar.gz psshclient.app
 
       - name: Upload build artifacts
