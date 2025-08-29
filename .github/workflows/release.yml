@@ -18,13 +18,29 @@ jobs:
   build:
     strategy:
       matrix:
-        platform:
+        include:
           - os: ubuntu-latest
-            targets: ["linux", "windows"]
+            goos: linux
+            goarch: amd64
+            name: linux-amd64
+          - os: ubuntu-latest
+            goos: linux
+            goarch: arm64
+            name: linux-arm64
+          - os: ubuntu-latest
+            goos: windows
+            goarch: amd64
+            name: windows-amd64
           - os: macos-latest
-            targets: ["darwin"]
+            goos: darwin
+            goarch: amd64
+            name: darwin-amd64
+          - os: macos-latest
+            goos: darwin
+            goarch: arm64
+            name: darwin-arm64
 
-    runs-on: ${{ matrix.platform.os }}
+    runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v4
@@ -34,44 +50,103 @@ jobs:
         with:
           go-version: '1.24.5'
 
-      - name: Install fyne-cross
-        run: go install github.com/fyne-io/fyne-cross@latest
+      - name: Install fyne
+        run: go install fyne.io/fyne/v2/cmd/fyne@latest
 
-      - name: Build for each target
+      - name: Install dependencies
+        run: |
+          go mod tidy
+          go mod download
+
+      - name: Set version
+        id: version
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/v}
+          else
+            VERSION=${{ github.event.inputs.version }}
+          fi
+          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Build binary
+        env:
+          CGO_ENABLED: 1
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
         run: |
           mkdir -p dist
-          go mod tidy
-          VERSION=${GITHUB_REF_NAME#v}
-          for target in ${{ join(matrix.platform.targets, ' ') }}; do
-            fyne-cross $target -arch=* -output app -app-version $VERSION -app-id co.ispapp.psshclient
-          done
+          
+          # Set up cross-compilation for CGO if needed
+          if [ "${{ matrix.goos }}" = "windows" ] && [ "${{ runner.os }}" = "Linux" ]; then
+            sudo apt-get update
+            sudo apt-get install -y gcc-mingw-w64
+            export CC=x86_64-w64-mingw32-gcc
+          fi
+          
+          # Build the binary
+          BINARY_NAME="psshclient"
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            BINARY_NAME="${BINARY_NAME}.exe"
+          fi
+          
+          go build -ldflags "-s -w" -o "dist/${BINARY_NAME}" .
+
+      - name: Package app (non-Windows)
+        if: matrix.goos != 'windows'
+        run: |
+          cd dist
+          fyne package -os ${{ matrix.goos }} -icon ../Icon.png -name psshclient -appVersion ${{ steps.version.outputs.VERSION }} -appID co.ispapp.psshclient
+          
+          # Create archive
+          if [ "${{ matrix.goos }}" = "darwin" ]; then
+            tar -czf psshclient-${{ matrix.name }}.tar.gz psshclient.app
+          else
+            tar -czf psshclient-${{ matrix.name }}.tar.gz psshclient.tar.xz
+          fi
+
+      - name: Package app (Windows)
+        if: matrix.goos == 'windows' && runner.os == 'Linux'
+        run: |
+          cd dist
+          # For Windows, just create a zip with the exe
+          zip psshclient-${{ matrix.name }}.zip psshclient.exe
+
+      - name: Package app (Windows native)
+        if: matrix.goos == 'windows' && runner.os == 'Windows'
+        run: |
+          cd dist
+          fyne package -os windows -icon ../Icon.png -name psshclient -appVersion ${{ steps.version.outputs.VERSION }} -appID co.ispapp.psshclient
+          Compress-Archive -Path psshclient.exe -DestinationPath psshclient-${{ matrix.name }}.zip
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.platform.os }}-builds
-          path: dist/*
+          name: ${{ matrix.name }}
+          path: dist/psshclient-${{ matrix.name }}.*
           retention-days: 1
 
   release:
     needs: build
     runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download build artifacts
+      - name: Download all build artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: '*-builds'
           path: dist
 
-      - name: Flatten artifacts
+      - name: Prepare release assets
         run: |
           mkdir -p release-assets
-          find dist -type f -exec mv {} release-assets/ \;
+          find dist -type f \( -name "*.tar.gz" -o -name "*.zip" \) -exec cp {} release-assets/ \;
+          ls -la release-assets/
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: release-assets/*
+          draft: false
+          prerelease: false
