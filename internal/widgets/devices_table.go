@@ -8,6 +8,7 @@ import (
 	"github.com/ispapp/psshclient/internal/data"
 	"github.com/ispapp/psshclient/internal/scanner"
 	"github.com/ispapp/psshclient/internal/settings"
+	"github.com/ispapp/psshclient/internal/windows"
 	"github.com/ispapp/psshclient/pkg/pssh"
 
 	"fyne.io/fyne/v2"
@@ -262,13 +263,13 @@ func CreateDevicesTableWithWindow(parentWindow fyne.Window, app fyne.App) *fyne.
 
 	// Set column widths for better layout
 	table.SetColumnWidth(0, 60)  // Select checkbox
-	table.SetColumnWidth(1, 120) // IP Address
-	table.SetColumnWidth(2, 150) // Hostname
+	table.SetColumnWidth(1, 160) // IP Address
+	table.SetColumnWidth(2, 160) // Hostname
 	table.SetColumnWidth(3, 100) // SSH Status
 	table.SetColumnWidth(4, 80)  // SSH Port
 	table.SetColumnWidth(5, 100) // Username
 	table.SetColumnWidth(6, 100) // Password
-	table.SetColumnWidth(7, 80)  // Status
+	table.SetColumnWidth(7, 160) // Status
 	table.SetColumnWidth(8, 100) // Actions
 
 	// Listen for changes to the device list
@@ -456,14 +457,44 @@ func createSSHControls(selectedDevices map[int]bool, sshManager *pssh.SSHManager
 	})
 
 	// Clear Selection button
-	clearSelectionBtn := widget.NewButtonWithIcon("Clear", theme.ContentClearIcon(), func() {
-		// Clear all selections
-		for k := range selectedDevices {
-			delete(selectedDevices, k)
+	clearSelectionBtn := widget.NewButtonWithIcon("Clear selected", theme.ContentClearIcon(), func() {
+		// Count selected devices
+		var selectedCount int
+		var selectedIPs []string
+		for deviceIndex, selected := range selectedDevices {
+			if selected && deviceIndex < data.DeviceList.Length() {
+				if deviceObj, err := data.DeviceList.GetValue(deviceIndex); err == nil {
+					if device, ok := deviceObj.(scanner.Device); ok {
+						selectedCount++
+						selectedIPs = append(selectedIPs, device.IP)
+					}
+				}
+			}
 		}
-		dialog.ShowInformation("Selection Cleared",
-			"All device selections have been cleared.",
-			parentWindow)
+
+		if selectedCount == 0 {
+			dialog.ShowInformation("No Selection", "No devices are currently selected.", parentWindow)
+			return
+		}
+
+		// Show confirmation dialog
+		dialog.ShowConfirm("Remove Selected Devices",
+			fmt.Sprintf("Are you sure you want to remove %d selected device(s) from the list?\n\nThis will remove them from both the current list and the database.", selectedCount),
+			func(confirmed bool) {
+				if confirmed {
+					// Remove selected devices from both list and database
+					removeSelectedDevices(selectedDevices)
+
+					// Clear the selection map
+					for k := range selectedDevices {
+						delete(selectedDevices, k)
+					}
+
+					dialog.ShowInformation("Devices Removed",
+						fmt.Sprintf("Successfully removed %d device(s) from the list and database.", selectedCount),
+						parentWindow)
+				}
+			}, parentWindow)
 	})
 
 	// Load Recent button - loads devices from last cleanup setting
@@ -556,7 +587,7 @@ func showScriptDialog(connections []*pssh.SSHConnection, parent fyne.Window, app
 		progress := widget.NewProgressBarInfinite()
 		outputBox.Add(progress)
 
-		go func() {
+		go fyne.Do(func() {
 			var results []string
 			var mu sync.Mutex
 			var wg sync.WaitGroup
@@ -591,7 +622,7 @@ func showScriptDialog(connections []*pssh.SSHConnection, parent fyne.Window, app
 			outputLabel.Wrapping = fyne.TextWrapWord
 			outputBox.Add(outputLabel)
 			outputBox.Refresh()
-		}()
+		})
 	})
 
 	content := container.NewVBox(
@@ -601,10 +632,14 @@ func showScriptDialog(connections []*pssh.SSHConnection, parent fyne.Window, app
 		widget.NewLabel("Output:"),
 		outputScroll,
 	)
-
-	d := dialog.NewCustom("Run Script", "Close", content, parent)
-	d.Resize(fyne.NewSize(700, 500))
-	d.Show()
+	windRunScript, err := windows.WinManager.NewWindow("Run Script", "run_scripts")
+	if err != nil {
+		fmt.Printf("Failed to create window: %v\n", err)
+		return
+	}
+	windRunScript.Window.SetContent(content)
+	windRunScript.Window.Resize(fyne.NewSize(700, 500))
+	windRunScript.Window.Show()
 }
 
 // showUsernameDialog shows a dialog to enter username for a device
@@ -742,4 +777,35 @@ func connectToDevice(deviceIndex int, sshManager *pssh.SSHManager, parentWindow 
 			}
 		}
 	}
+}
+
+// removeSelectedDevices removes selected devices from the device list and database
+func removeSelectedDevices(selectedDevices map[int]bool) {
+	// Get all current devices
+	allDevices := data.GetDevices()
+	var remainingDevices []interface{}
+	var removedIPs []string
+
+	// Create a new list excluding selected devices
+	for i, device := range allDevices {
+		if selectedDevices[i] {
+			// This device is selected for removal
+			removedIPs = append(removedIPs, device.IP)
+
+			// Remove from database if available
+			if data.DB != nil {
+				if err := data.DB.DeleteDevice(device.IP); err != nil {
+					fmt.Printf("Failed to delete device %s from database: %v\n", device.IP, err)
+				}
+			}
+		} else {
+			// Keep this device
+			remainingDevices = append(remainingDevices, device)
+		}
+	}
+
+	// Update the device list with remaining devices
+	data.DeviceList.Set(remainingDevices)
+
+	fmt.Printf("Removed %d devices: %v\n", len(removedIPs), removedIPs)
 }

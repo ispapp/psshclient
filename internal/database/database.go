@@ -257,6 +257,28 @@ func (db *DB) DeleteOldDevices(olderThan time.Duration) error {
 	return nil
 }
 
+// DeleteDevice deletes a specific device by IP address
+func (db *DB) DeleteDevice(ip string) error {
+	query := `DELETE FROM devices WHERE ip = ?`
+
+	result, err := db.conn.Exec(query, ip)
+	if err != nil {
+		return fmt.Errorf("failed to delete device %s: %v", ip, err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %v", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("device %s not found in database", ip)
+	}
+
+	fmt.Printf("Deleted device %s from database\n", ip)
+	return nil
+}
+
 // SaveSetting saves an application setting
 func (db *DB) SaveSetting(key, value string) error {
 	query := `
