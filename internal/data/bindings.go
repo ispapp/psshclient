@@ -2,13 +2,14 @@ package data
 
 import (
 	"fmt"
-	"github.com/ispapp/psshclient/internal/database"
-	"github.com/ispapp/psshclient/internal/scanner"
-	"github.com/ispapp/psshclient/internal/settings"
 	"log"
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/ispapp/psshclient/internal/database"
+	"github.com/ispapp/psshclient/internal/scanner"
+	"github.com/ispapp/psshclient/internal/settings"
 
 	"fyne.io/fyne/v2/data/binding"
 )
@@ -193,6 +194,11 @@ func SaveDevicesToDB() {
 
 // LoadDevicesFromDB loads devices from database and adds them to the device list
 func LoadDevicesFromDB() {
+	LoadDevicesFromDBWithCallback(nil)
+}
+
+// LoadDevicesFromDBWithCallback loads devices from database and calls the callback after loading
+func LoadDevicesFromDBWithCallback(callback func()) {
 	if DB == nil {
 		return
 	}
@@ -206,11 +212,21 @@ func LoadDevicesFromDB() {
 	// Clear current list and add loaded devices
 	var deviceInterfaces []interface{}
 	for _, device := range devices {
+		// Reset connection status since actual connections are not persisted
+		if device.Connected {
+			device.Connected = false
+			device.Status = "Loaded (Disconnected)"
+		}
 		deviceInterfaces = append(deviceInterfaces, device)
 	}
 
 	DeviceList.Set(deviceInterfaces)
 	fmt.Printf("Loaded %d devices from database\n", len(devices))
+
+	// Call callback if provided
+	if callback != nil {
+		go callback()
+	}
 }
 
 // LoadRecentDevicesFromDB loads only recently seen devices from database
@@ -228,6 +244,11 @@ func LoadRecentDevicesFromDB(since time.Duration) {
 	// Clear current list and add loaded devices
 	var deviceInterfaces []interface{}
 	for _, device := range devices {
+		// Reset connection status since actual connections are not persisted
+		if device.Connected {
+			device.Connected = false
+			device.Status = "Loaded (Disconnected)"
+		}
 		deviceInterfaces = append(deviceInterfaces, device)
 	}
 

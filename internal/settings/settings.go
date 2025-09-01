@@ -83,6 +83,17 @@ func DefaultSettings() *AppSettings {
 // Global settings instance
 var Current *AppSettings
 
+// GetCurrent returns the current settings instance
+func RefreshCurrent() *AppSettings {
+	if Current == nil {
+		err := Load()
+		if err != nil {
+			Current = DefaultSettings()
+		}
+	}
+	return Current
+}
+
 // Initialize loads settings from file or creates default settings
 func Initialize() error {
 	Current = DefaultSettings()

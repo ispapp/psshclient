@@ -1,11 +1,13 @@
 package ui
 
 import (
+	"log"
+
 	"github.com/ispapp/psshclient/internal/data"
 	"github.com/ispapp/psshclient/internal/dialogs"
 	"github.com/ispapp/psshclient/internal/settings"
 	"github.com/ispapp/psshclient/internal/widgets"
-	"log"
+	"github.com/ispapp/psshclient/internal/windows"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -36,6 +38,8 @@ func NewMainUI(app fyne.App) fyne.Window {
 		container.NewTabItem("Devices", devicesTable),
 		container.NewTabItem("Settings", settingsTab),
 	)
+	winmanager := windows.NewWindowManager(app)
+	winmanager.SetMainWindow(MainWindow)
 	// Create scan menu
 	scanMenu := fyne.NewMenu("Scan",
 		fyne.NewMenuItem("Start Fast Scan", func() {
@@ -46,6 +50,10 @@ func NewMainUI(app fyne.App) fyne.Window {
 			actionLabel.SetText("Selected: Scan Subnet")
 			dialogs.ShowSubnetScanDialog(MainWindow)
 		}),
+		fyne.NewMenuItem("Neighbor Discovery", func() {
+			actionLabel.SetText("Selected: Neighbor Discovery")
+			dialogs.ShowNeighborDiscoveryDialog(winmanager)
+		}),
 		fyne.NewMenuItem("Start Syn Scan", func() {
 			actionLabel.SetText("Selected: Start Syn Scan")
 		}),
@@ -53,9 +61,7 @@ func NewMainUI(app fyne.App) fyne.Window {
 		fyne.NewMenuItem("Exit", func() {
 			app.Quit()
 		}),
-	)
-
-	// Create File menu
+	) // Create File menu
 	fileMenu := fyne.NewMenu("File",
 		fyne.NewMenuItem("Import CSV", func() {
 			dialogs.ShowCSVImportDialog(MainWindow)
@@ -84,8 +90,8 @@ func NewMainUI(app fyne.App) fyne.Window {
 	tabs.SetTabLocation(container.TabLocation(container.ScrollBoth))
 
 	MainWindow.SetContent(tabs)
-	MainWindow.Resize(fyne.NewSize(800, 600))
-
+	MainWindow.Resize(fyne.NewSize(1000, 800))
+	MainWindow.SetPadded(true)
 	// Set up cleanup when the main window closes
 	MainWindow.SetOnClosed(func() {
 		// Save current devices to database before closing

@@ -2,6 +2,7 @@ package widgets
 
 import (
 	"fmt"
+
 	"github.com/ispapp/psshclient/internal/settings"
 
 	"fyne.io/fyne/v2"
@@ -157,7 +158,8 @@ func CreateSettingsTab(parentWindow fyne.Window) *container.Scroll {
 			func(confirmed bool) {
 				if confirmed {
 					// Reset to defaults
-					defaults := settings.DefaultSettings()
+					_ = settings.RefreshCurrent()
+					defaults := settings.Current
 					*settings.Current = *defaults
 
 					// Update UI

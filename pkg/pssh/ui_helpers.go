@@ -2,13 +2,13 @@ package pssh
 
 import (
 	"fmt"
-	"github.com/ispapp/psshclient/internal/resources"
 	"time"
+
+	"github.com/ispapp/psshclient/internal/windows"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -164,7 +164,7 @@ func ConnectToMultipleDevices(devices []string, credentials SSHCredentials, pare
 }
 
 // OpenMultipleTerminals opens a single multi-device terminal for SSH connections
-func OpenMultipleTerminals(connections []*SSHConnection, parentWindow fyne.Window) error {
+func OpenMultipleTerminals(connections []*SSHConnection) error {
 	if len(connections) == 0 {
 		return fmt.Errorf("no connections provided")
 	}
@@ -181,16 +181,16 @@ func OpenMultipleTerminals(connections []*SSHConnection, parentWindow fyne.Windo
 		multiTerm, err = termManager.NewSSHMultiTerminal(connections)
 		if err == nil {
 			term := multiTerm.GetWidget()
-			dialog := dialog.NewCustomWithoutButtons("", term, parentWindow)
-			dialog.SetButtons([]fyne.CanvasObject{
-				widget.NewButtonWithIcon("Close", theme.CancelIcon(), func() {
-					dialog.Hide()
-					term.Exit()
-				}),
+			termwin, err := windows.WinManager.NewWindow("Multi-Device Terminal", "terminal")
+			if err != nil {
+				return
+			}
+			termwin.Window.SetContent(term)
+			termwin.Window.Resize(fyne.NewSize(800, 600))
+			termwin.Window.SetOnClosed(func() {
+				term.Exit()
 			})
-			dialog.SetIcon(resources.ResourceIconPng)
-			dialog.Resize(fyne.NewSize(800, 600))
-			dialog.Show()
+			termwin.Window.Show()
 		}
 	})
 
@@ -234,7 +234,7 @@ func CreateSSHMenuActions(selectedDevices []string, parent fyne.Window, app fyne
 				}
 
 				// Open multi-device terminal
-				err = OpenMultipleTerminals(connections, parent)
+				err = OpenMultipleTerminals(connections)
 				if err != nil {
 					dialog.ShowError(err, parent)
 				}

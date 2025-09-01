@@ -5,6 +5,7 @@ go 1.24.5
 require (
 	fyne.io/fyne/v2 v2.6.3
 	github.com/fyne-io/terminal v0.0.0-20250805210206-f3224d514e14
+	github.com/google/gopacket v1.1.19
 	github.com/mattn/go-sqlite3 v1.14.32
 	golang.org/x/crypto v0.41.0
 )

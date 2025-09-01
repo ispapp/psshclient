@@ -18,6 +18,85 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
+// AutoReconnectDevices attempts to reconnect devices that were previously connected
+func AutoReconnectDevices(sshManager *pssh.SSHManager, parentWindow fyne.Window) {
+	go func() {
+		deviceCount := data.DeviceList.Length()
+		var connectableDevices []struct {
+			device scanner.Device
+			index  int
+		}
+
+		// Find devices that were previously connected and have credentials
+		for i := 0; i < deviceCount; i++ {
+			if deviceObj, err := data.DeviceList.GetValue(i); err == nil {
+				if device, ok := deviceObj.(scanner.Device); ok {
+					// Check if device was loaded from DB with connected status and has credentials
+					if device.Status == "Loaded (Disconnected)" && device.SSHStatus &&
+						device.Username != "" && device.Password != "" {
+						connectableDevices = append(connectableDevices, struct {
+							device scanner.Device
+							index  int
+						}{device, i})
+					}
+				}
+			}
+		}
+
+		if len(connectableDevices) == 0 {
+			fmt.Printf("No previously connected devices found for auto-reconnection\n")
+			return
+		}
+
+		fmt.Printf("Attempting to auto-reconnect %d previously connected devices...\n", len(connectableDevices))
+
+		// Attempt to reconnect each device
+		for _, item := range connectableDevices {
+			device := item.device
+			deviceIndex := item.index
+
+			sshPort := device.SSHPort
+			if sshPort == 0 {
+				sshPort = settings.Current.DefaultSSHPort
+			}
+
+			config := pssh.ConnectionConfig{
+				Host:     device.IP,
+				Port:     sshPort,
+				Username: device.Username,
+				Password: device.Password,
+				Timeout:  settings.Current.GetConnectionTimeout(),
+			}
+
+			fmt.Printf("Auto-reconnecting to %s...\n", device.IP)
+			resultChan := sshManager.ConnectMultiple([]pssh.ConnectionConfig{config})
+
+			// Process the result
+			for result := range resultChan {
+				if result.Error != nil {
+					fmt.Printf("Auto-reconnection failed for %s: %v\n", device.IP, result.Error)
+					device.Status = "Auto-reconnect failed"
+				} else if result.Connection.Connected {
+					fmt.Printf("Successfully auto-reconnected to %s\n", device.IP)
+					device.Connected = true
+					device.Status = "Auto-reconnected"
+				} else {
+					fmt.Printf("Auto-reconnection to %s reported as not connected\n", device.IP)
+					device.Status = "Auto-reconnect failed"
+				}
+				data.UpdateDevice(deviceIndex, device)
+			}
+		}
+
+		fmt.Printf("Auto-reconnection process completed\n")
+	}()
+}
+
+// TriggerAutoReconnect triggers auto-reconnection for devices loaded from database
+func TriggerAutoReconnect(sshManager *pssh.SSHManager, parentWindow fyne.Window) {
+	AutoReconnectDevices(sshManager, parentWindow)
+}
+
 // CreateDevicesTable creates a table widget to display discovered devices
 func CreateDevicesTable() *fyne.Container {
 	return CreateDevicesTableWithWindow(nil, nil)
@@ -307,7 +386,7 @@ func createSSHControls(selectedDevices map[int]bool, sshManager *pssh.SSHManager
 
 		// Create new SSH multi-terminal
 		fmt.Printf("Creating terminal manager...\n")
-		err := pssh.OpenMultipleTerminals(connections, parentWindow)
+		err := pssh.OpenMultipleTerminals(connections)
 		if err != nil {
 			fmt.Printf("Failed to create multi-terminal: %v\n", err)
 			dialog.ShowError(err, parentWindow)
@@ -390,6 +469,8 @@ func createSSHControls(selectedDevices map[int]bool, sshManager *pssh.SSHManager
 	// Load Recent button - loads devices from last cleanup setting
 	loadRecentBtn := widget.NewButtonWithIcon("Recent", theme.HistoryIcon(), func() {
 		data.LoadRecentDevicesFromDB(settings.Current.GetCleanupDuration())
+		// Trigger auto-reconnection for loaded devices
+		TriggerAutoReconnect(sshManager, parentWindow)
 		dialog.ShowInformation("Devices Loaded",
 			fmt.Sprintf("Recent devices from the last %d days have been loaded from the database.", settings.Current.CleanupOldDays),
 			parentWindow)
@@ -398,6 +479,8 @@ func createSSHControls(selectedDevices map[int]bool, sshManager *pssh.SSHManager
 	// Load All button - loads all devices from database
 	loadAllBtn := widget.NewButtonWithIcon("Load All", theme.FolderOpenIcon(), func() {
 		data.LoadDevicesFromDB()
+		// Trigger auto-reconnection for loaded devices
+		TriggerAutoReconnect(sshManager, parentWindow)
 		dialog.ShowInformation("Devices Loaded",
 			"All saved devices have been loaded from the database.",
 			parentWindow)

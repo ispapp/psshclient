@@ -519,10 +519,10 @@ func newMultiReader(readers []io.Reader, hostnames []string, state *SSHMultiTerm
 						for _, pattern := range errorPatterns {
 							if pattern.Match(data) {
 								// Send notification via the main app thread
-								fyne.CurrentApp().SendNotification(fyne.NewNotification(
-									fmt.Sprintf("Alert from %s", host),
-									string(data),
-								))
+								// fyne.CurrentApp().SendNotification(fyne.NewNotification(
+								// 	fmt.Sprintf("Alert from %s", host),
+								// 	string(data),
+								// ))
 								break // Send only one notification per data chunk
 							}
 						}
