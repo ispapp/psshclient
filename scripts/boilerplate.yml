@@ -1,0 +1,268 @@
+scripts:
+  # MikroTik Basic System Scripts
+  - name: "System Information"
+    description: "Get basic system information and resource usage"
+    content: |
+      /system resource print
+      /system identity print
+      /system routerboard print
+      /system package print
+    category: "MikroTik"
+
+  - name: "Interface Status"
+    description: "Show all interfaces and their status"
+    content: |
+      /interface print stats
+      /interface ethernet print
+      /interface wireless print
+    category: "MikroTik"
+
+  - name: "IP Configuration"
+    description: "Display IP addresses, routes, and DNS settings"
+    content: |
+      /ip address print
+      /ip route print
+      /ip dns print
+      /ip dhcp-server print
+    category: "MikroTik"
+
+  # Firewall and Security Scripts
+  - name: "Basic Firewall Rules"
+    description: "Add essential firewall rules for WAN protection"
+    content: |
+      /ip firewall filter
+      add chain=input action=accept connection-state=established,related comment="Accept established/related"
+      add chain=input action=accept src-address=192.168.0.0/16 comment="Accept local network"
+      add chain=input action=accept src-address=10.0.0.0/8 comment="Accept private network"
+      add chain=input action=accept src-address=172.16.0.0/12 comment="Accept private network"
+      add chain=input action=drop comment="Drop everything else"
+      add chain=forward action=accept connection-state=established,related comment="Accept established/related"
+      add chain=forward action=drop connection-state=invalid comment="Drop invalid"
+    category: "Firewall"
+
+  - name: "Block Common Attacks"
+    description: "Add firewall rules to block common network attacks"
+    content: |
+      /ip firewall filter
+      add chain=input action=drop protocol=tcp dst-port=22,23,80,443,8080,8291 src-address-list=port_scanners comment="Drop port scanners"
+      add chain=input action=add-src-to-address-list address-list=port_scanners address-list-timeout=2w protocol=tcp dst-port=22,23,80,443,8080,8291 connection-state=new src-address=!192.168.0.0/16 comment="Detect port scan"
+      add chain=input action=drop protocol=tcp tcp-flags=fin,!ack comment="Drop TCP FIN scan"
+      add chain=input action=drop protocol=tcp tcp-flags=fin,urg,psh comment="Drop TCP XMAS scan"
+      add chain=input action=drop protocol=tcp tcp-flags=!fin,!syn,!rst,!psh,!ack,!urg comment="Drop TCP NULL scan"
+    category: "Firewall"
+
+  - name: "Allow SSH and Web Access"
+    description: "Configure secure access rules for SSH and web management"
+    content: |
+      /ip firewall filter
+      add chain=input action=accept protocol=tcp dst-port=22 src-address=192.168.0.0/16 comment="Allow SSH from local network"
+      add chain=input action=accept protocol=tcp dst-port=80,443 src-address=192.168.0.0/16 comment="Allow web access from local network"
+      add chain=input action=accept protocol=tcp dst-port=8291 src-address=192.168.0.0/16 comment="Allow Winbox from local network"
+    category: "Firewall"
+
+  # VPN Configuration Scripts
+  - name: "L2TP VPN Server Setup"
+    description: "Configure L2TP VPN server with IPSec encryption"
+    content: |
+      /interface l2tp-server server set enabled=yes default-profile=default-encryption authentication=mschap2 use-ipsec=yes ipsec-secret=YourIPSecSecret
+      /ppp profile add name=vpn-profile local-address=192.168.100.1 remote-address=192.168.100.2-192.168.100.50 dns-server=8.8.8.8,8.8.4.4
+      /ppp secret add name=vpnuser password=vpnpass profile=vpn-profile service=l2tp
+      /ip firewall filter add chain=input action=accept protocol=udp dst-port=500,4500 comment="Allow IPSec"
+      /ip firewall filter add chain=input action=accept protocol=ipsec-esp comment="Allow IPSec ESP"
+      /ip firewall filter add chain=input action=accept protocol=tcp dst-port=1701 comment="Allow L2TP"
+      /ip firewall nat add chain=srcnat action=masquerade src-address=192.168.100.0/24 comment="VPN NAT"
+    category: "VPN"
+
+  - name: "OpenVPN Server Setup"
+    description: "Basic OpenVPN server configuration"
+    content: |
+      /system certificate add name=ca-template common-name=myCa key-usage=key-cert-sign,crl-sign
+      /system certificate add name=server-template common-name=server
+      /system certificate add name=client-template common-name=client1
+      /system certificate sign ca-template ca-crl-host=127.0.0.1 name=myCa
+      /system certificate sign server-template ca=myCa name=server
+      /system certificate sign client-template ca=myCa name=client1
+      /interface ovpn-server server set default-profile=default certificate=server require-client-certificate=yes auth=sha1,md5 cipher=blowfish128,aes128 enabled=yes port=1194
+      /ppp profile add name=ovpn-profile local-address=192.168.200.1 remote-address=192.168.200.2-192.168.200.50 dns-server=8.8.8.8
+      /ppp secret add name=ovpnuser password=ovpnpass profile=ovpn-profile service=ovpn
+    category: "VPN"
+
+  - name: "WireGuard VPN Setup"
+    description: "Configure WireGuard VPN interface and peer"
+    content: |
+      /interface wireguard add listen-port=51820 name=wireguard1
+      /interface wireguard peers add allowed-address=192.168.150.2/32 interface=wireguard1 public-key="CLIENT_PUBLIC_KEY_HERE"
+      /ip address add address=192.168.150.1/24 interface=wireguard1
+      /ip firewall filter add chain=input action=accept protocol=udp dst-port=51820 comment="Allow WireGuard"
+      /ip firewall nat add chain=srcnat action=masquerade src-address=192.168.150.0/24 comment="WireGuard NAT"
+    category: "VPN"
+
+  # Cloud and Management Scripts
+  - name: "Enable Cloud Services"
+    description: "Configure MikroTik Cloud services for remote access"
+    content: |
+      /ip cloud set ddns-enabled=yes update-time=yes
+      /ip cloud advanced set use-local-address=no
+      /tool bandwidth-server set enabled=yes authenticate=yes allocate-udp-ports-from=2000
+    category: "Cloud"
+
+  - name: "Setup SNMP"
+    description: "Configure SNMP for network monitoring"
+    content: |
+      /snmp set enabled=yes contact="admin@company.com" location="Network Center" engine-id-suffix="12345"
+      /snmp community set public security=none read-access=yes write-access=no numbers=0
+      /snmp community add name=monitoring security=none read-access=yes write-access=no
+    category: "Cloud"
+
+  - name: "Backup Configuration"
+    description: "Create and export system backup"
+    content: |
+      /system backup save name=backup-$(date)
+      /export file=config-backup-$(date)
+      /system backup print
+      /file print where name~"backup"
+    category: "System"
+
+  # Network Configuration Scripts
+  - name: "Bridge Configuration"
+    description: "Create and configure a bridge interface"
+    content: |
+      /interface bridge add name=bridge1 protocol-mode=rstp
+      /interface bridge port add bridge=bridge1 interface=ether2
+      /interface bridge port add bridge=bridge1 interface=ether3
+      /interface bridge port add bridge=bridge1 interface=ether4
+      /ip address add address=192.168.1.1/24 interface=bridge1
+    category: "Network"
+
+  - name: "DHCP Server Setup"
+    description: "Configure DHCP server with common options"
+    content: |
+      /ip pool add name=dhcp-pool ranges=192.168.1.100-192.168.1.200
+      /ip dhcp-server add address-pool=dhcp-pool disabled=no interface=bridge1 name=dhcp1
+      /ip dhcp-server network add address=192.168.1.0/24 gateway=192.168.1.1 dns-server=8.8.8.8,8.8.4.4
+      /ip dhcp-server enable dhcp1
+    category: "Network"
+
+  - name: "Static Routes"
+    description: "Add common static routes"
+    content: |
+      /ip route add dst-address=0.0.0.0/0 gateway=192.168.1.1 comment="Default route"
+      /ip route add dst-address=10.0.0.0/8 gateway=192.168.1.254 comment="Internal network"
+      /ip route print
+    category: "Network"
+
+  # Wireless Configuration Scripts
+  - name: "Wireless AP Setup"
+    description: "Configure wireless access point with WPA2"
+    content: |
+      /interface wireless set wlan1 disabled=no mode=ap-bridge ssid=MyNetwork frequency=auto channel-width=20/40mhz-XX wireless-protocol=802.11 security-profile=default
+      /interface wireless security-profiles set default authentication-types=wpa2-psk mode=dynamic-keys wpa2-pre-shared-key=MyWiFiPassword
+      /interface wireless enable wlan1
+    category: "Wireless"
+
+  - name: "Guest Network"
+    description: "Setup isolated guest wireless network"
+    content: |
+      /interface wireless security-profiles add name=guest-profile authentication-types=wpa2-psk mode=dynamic-keys wpa2-pre-shared-key=GuestPassword
+      /interface wireless add name=wlan-guest master-interface=wlan1 ssid=Guest-Network security-profile=guest-profile disabled=no
+      /interface bridge add name=bridge-guest
+      /interface bridge port add bridge=bridge-guest interface=wlan-guest
+      /ip address add address=192.168.10.1/24 interface=bridge-guest
+      /ip pool add name=guest-pool ranges=192.168.10.100-192.168.10.150
+      /ip dhcp-server add address-pool=guest-pool disabled=no interface=bridge-guest name=guest-dhcp
+      /ip dhcp-server network add address=192.168.10.0/24 gateway=192.168.10.1 dns-server=8.8.8.8
+    category: "Wireless"
+
+  # Monitoring and Logging Scripts
+  - name: "Enable Logging"
+    description: "Configure system logging for troubleshooting"
+    content: |
+      /system logging add topics=info,!debug action=memory
+      /system logging add topics=warning action=memory
+      /system logging add topics=error action=memory
+      /system logging add topics=critical action=memory
+      /system logging print
+    category: "Monitoring"
+
+  - name: "Bandwidth Monitor"
+    description: "Setup bandwidth monitoring for interfaces"
+    content: |
+      /tool bandwidth-server set enabled=yes authenticate=yes
+      /interface monitor-traffic interface=ether1 count=10
+      /tool torch interface=ether1 duration=30
+    category: "Monitoring"
+
+  - name: "Connection Tracking"
+    description: "Monitor active connections and sessions"
+    content: |
+      /ip firewall connection print
+      /interface print stats
+      /system resource print
+      /tool netwatch print
+    category: "Monitoring"
+
+  # Security and Access Control Scripts
+  - name: "User Management"
+    description: "Create users with different access levels"
+    content: |
+      /user add name=readonly password=readpass group=read comment="Read-only user"
+      /user add name=admin password=adminpass group=full comment="Full access admin"
+      /user add name=operator password=operpass group=write comment="Operator user"
+      /user print
+    category: "Security"
+
+  - name: "MAC Address Filtering"
+    description: "Setup MAC address based access control"
+    content: |
+      /interface wireless access-list add interface=wlan1 mac-address=AA:BB:CC:DD:EE:FF comment="Allowed device 1"
+      /interface wireless access-list add interface=wlan1 mac-address=11:22:33:44:55:66 comment="Allowed device 2"
+      /interface wireless set wlan1 access-list=yes default-authentication=no
+      /interface wireless access-list print
+    category: "Security"
+
+  # Quality of Service Scripts
+  - name: "Simple Queue Setup"
+    description: "Configure bandwidth limiting with simple queues"
+    content: |
+      /queue simple add name=limit-guest target=192.168.10.0/24 max-limit=10M/10M comment="Guest network limit"
+      /queue simple add name=priority-admin target=192.168.1.10 priority=1 max-limit=100M/100M comment="Admin priority"
+      /queue simple print
+    category: "QoS"
+
+  - name: "Hotspot Configuration"
+    description: "Setup captive portal hotspot"
+    content: |
+      /ip hotspot setup
+      /ip hotspot user add name=guest password=guest123 profile=default comment="Guest user"
+      /ip hotspot user add name=premium password=premium123 profile=default limit-uptime=8h comment="Premium user"
+      /ip hotspot print
+      /ip hotspot user print
+    category: "Hotspot"
+
+  # Linux System Scripts
+  - name: "System Status"
+    description: "Get Linux system information and status"
+    content: |
+      uptime
+      df -h
+      free -h
+      ps aux | head -10
+      netstat -tuln
+    category: "Linux"
+
+  - name: "Network Configuration"
+    description: "Display Linux network configuration"
+    content: |
+      ip addr show
+      ip route show
+      cat /etc/resolv.conf
+      ss -tuln
+    category: "Linux"
+
+  - name: "Update System"
+    description: "Update Linux system packages"
+    content: |
+      apt update && apt upgrade -y
+      systemctl status
+      journalctl -f
+    category: "Linux"
