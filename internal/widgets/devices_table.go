@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strconv"
 	"sync"
 	"time"
@@ -580,22 +579,6 @@ type ScriptCollection struct {
 	Scripts []Script `yaml:"scripts"`
 }
 
-// loadScriptsFromFile loads scripts from a local YAML file
-func loadScriptsFromFile(filePath string) (*ScriptCollection, error) {
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read file: %v", err)
-	}
-
-	var collection ScriptCollection
-	err = yaml.Unmarshal(data, &collection)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse YAML: %v", err)
-	}
-
-	return &collection, nil
-}
-
 // loadScriptsFromGist loads scripts from a public GitHub gist URL
 func loadScriptsFromGist(gistURL string) (*ScriptCollection, error) {
 	// Set timeout for HTTP request
@@ -629,18 +612,30 @@ func loadScriptsFromGist(gistURL string) (*ScriptCollection, error) {
 
 // createScriptAutofillSection creates the script autofill UI section
 func createScriptAutofillSection(scriptInput *widget.Entry, parentWindow fyne.Window) *fyne.Container {
-	var currentScripts []Script
 	// Fixed GitHub raw URL for script templates
 	const githubScriptURL = "https://raw.githubusercontent.com/ispapp/psshclient/main/scripts/ScriptLibrary.yml"
 
-	// Category filter
-	categorySelect := widget.NewSelect([]string{"All", "MikroTik", "Firewall", "VPN", "Cloud", "System", "Network", "Wireless", "Monitoring", "Security", "QoS", "Hotspot", "Linux"}, nil)
+	// Create bindings for reactive UI
+	allScripts := make([]Script, 0)
+	selectedCategoryBinding := binding.NewString()
+	selectedCategoryBinding.Set("All")
+
+	loadingBinding := binding.NewBool()
+	loadingBinding.Set(false)
+
+	// Scripts options binding for the dropdown
+	scriptOptionsBinding := binding.NewStringList()
+
+	// Category filter with binding
+	categorySelect := widget.NewSelect([]string{"All", "MikroTik", "Firewall", "VPN", "Cloud", "System", "Network", "Wireless", "Monitoring", "Security", "QoS", "Hotspot", "Linux"}, func(selected string) {
+		selectedCategoryBinding.Set(selected)
+	})
 	categorySelect.SetSelected("All")
 
-	// Scripts dropdown selector
+	// Scripts dropdown selector using data binding
 	scriptsSelect := widget.NewSelect([]string{}, func(selected string) {
 		// Find the selected script and load its content
-		for _, script := range currentScripts {
+		for _, script := range allScripts {
 			if fmt.Sprintf("%s - %s", script.Name, script.Description) == selected {
 				scriptInput.SetText(script.Content)
 				break
@@ -649,14 +644,56 @@ func createScriptAutofillSection(scriptInput *widget.Entry, parentWindow fyne.Wi
 	})
 	scriptsSelect.PlaceHolder = "Select a script template..."
 
-	// Load scripts from fixed GitHub URL
+	// Bind the script options to update the select widget
+	scriptOptionsBinding.AddListener(binding.NewDataListener(func() {
+		if options, err := scriptOptionsBinding.Get(); err == nil {
+			scriptsSelect.Options = options
+			scriptsSelect.ClearSelected()
+			scriptsSelect.Refresh()
+		}
+	}))
+
+	// Filter scripts function
+	filterScripts := func() {
+		selectedCategory, _ := selectedCategoryBinding.Get()
+		var filteredOptions []string
+
+		for _, script := range allScripts {
+			if selectedCategory == "All" || script.Category == selectedCategory {
+				filteredOptions = append(filteredOptions, fmt.Sprintf("%s - %s", script.Name, script.Description))
+			}
+		}
+
+		// Update the binding which will automatically update the UI
+		scriptOptionsBinding.Set(filteredOptions)
+
+		// Update placeholder text based on results
+		if len(filteredOptions) > 0 {
+			scriptsSelect.PlaceHolder = fmt.Sprintf("Select from %d available scripts...", len(filteredOptions))
+		} else {
+			scriptsSelect.PlaceHolder = "No scripts found for this category..."
+		}
+		scriptsSelect.Refresh()
+	}
+
+	// Load scripts from fixed GitHub URL (only once)
 	loadScripts := func() {
+		loading, _ := loadingBinding.Get()
+		if loading {
+			return // Already loading
+		}
+
+		loadingBinding.Set(true)
+
 		// Show loading indicator
 		progress := dialog.NewCustomWithoutButtons("Loading Scripts", widget.NewProgressBarInfinite(), parentWindow)
 		progress.Show()
 
 		go func() {
-			defer progress.Hide()
+			defer func() {
+				progress.Hide()
+				loadingBinding.Set(false)
+			}()
 
 			collection, err := loadScriptsFromGist(githubScriptURL)
 			if err != nil {
@@ -666,42 +703,32 @@ func createScriptAutofillSection(scriptInput *widget.Entry, parentWindow fyne.Wi
 				return
 			}
 
-			// Filter scripts by category
-			selectedCategory := categorySelect.Selected
-			var filteredScripts []Script
-			for _, script := range collection.Scripts {
-				if selectedCategory == "All" || script.Category == selectedCategory {
-					filteredScripts = append(filteredScripts, script)
-				}
-			}
+			// Store all scripts
+			allScripts = collection.Scripts
 
-			currentScripts = filteredScripts
-
-			// Update scripts dropdown options
-			fyne.Do(func() {
-				var scriptOptions []string
-				for _, script := range currentScripts {
-					scriptOptions = append(scriptOptions, fmt.Sprintf("%s - %s", script.Name, script.Description))
-				}
-				scriptsSelect.Options = scriptOptions
-				scriptsSelect.Refresh()
-
-				if len(scriptOptions) > 0 {
-					scriptsSelect.PlaceHolder = fmt.Sprintf("Select from %d available scripts...", len(scriptOptions))
-				} else {
-					scriptsSelect.PlaceHolder = "No scripts found for this category..."
-				}
-			})
+			// Filter and update UI
+			fyne.Do(filterScripts)
 		}()
 	}
 
-	// Load button
+	// Bind category changes to filter function
+	selectedCategoryBinding.AddListener(binding.NewDataListener(func() {
+		if len(allScripts) > 0 {
+			filterScripts()
+		}
+	}))
+
+	// Load button with loading state binding
 	loadBtn := widget.NewButtonWithIcon("Reload Scripts", theme.DownloadIcon(), loadScripts)
 
-	// Category change handler
-	categorySelect.OnChanged = func(selected string) {
-		loadScripts()
-	}
+	// Bind loading state to button enabled state
+	loadingBinding.AddListener(binding.NewDataListener(func() {
+		if loading, _ := loadingBinding.Get(); loading {
+			loadBtn.Disable()
+		} else {
+			loadBtn.Enable()
+		}
+	}))
 
 	// Create the autofill section (no URL input)
 	autofillSection := container.NewVBox(
