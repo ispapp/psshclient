@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -580,6 +580,22 @@ type ScriptCollection struct {
 	Scripts []Script `yaml:"scripts"`
 }
 
+// loadScriptsFromFile loads scripts from a local YAML file
+func loadScriptsFromFile(filePath string) (*ScriptCollection, error) {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read file: %v", err)
+	}
+
+	var collection ScriptCollection
+	err = yaml.Unmarshal(data, &collection)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse YAML: %v", err)
+	}
+
+	return &collection, nil
+}
+
 // loadScriptsFromGist loads scripts from a public GitHub gist URL
 func loadScriptsFromGist(gistURL string) (*ScriptCollection, error) {
 	// Set timeout for HTTP request
@@ -613,42 +629,28 @@ func loadScriptsFromGist(gistURL string) (*ScriptCollection, error) {
 
 // createScriptAutofillSection creates the script autofill UI section
 func createScriptAutofillSection(scriptInput *widget.Entry, parentWindow fyne.Window) *fyne.Container {
-	// URL entry for custom gist URLs
-	gistURLEntry := widget.NewEntry()
-	gistURLEntry.SetPlaceHolder("Enter GitHub gist raw URL...")
-
-	// Default gist URL (you can change this to your default scripts gist)
-	defaultGistURL := "https://gist.githubusercontent.com/username/gistid/raw/scripts.yml"
-	gistURLEntry.SetText(defaultGistURL)
-	gistURLEntry.TextStyle = fyne.TextStyle{Monospace: true, TabWidth: 1}
-	gistURLEntry.PlaceHolder = "Enter GitHub gist raw URL..."
+	var currentScripts []Script
+	// Fixed GitHub raw URL for script templates
+	const githubScriptURL = "https://raw.githubusercontent.com/ispapp/psshclient/main/scripts/ScriptLibrary.yml"
 
 	// Category filter
-	categorySelect := widget.NewSelect([]string{"All", "MikroTik", "Linux", "Network", "System"}, nil)
+	categorySelect := widget.NewSelect([]string{"All", "MikroTik", "Firewall", "VPN", "Cloud", "System", "Network", "Wireless", "Monitoring", "Security", "QoS", "Hotspot", "Linux"}, nil)
 	categorySelect.SetSelected("All")
 
-	// Scripts list
-	scriptsList := widget.NewList(
-		func() int { return 0 },
-		func() fyne.CanvasObject {
-			return container.NewHBox(
-				widget.NewLabel("Script Name"),
-				widget.NewLabel("Description"),
-			)
-		},
-		func(id widget.ListItemID, obj fyne.CanvasObject) {},
-	)
-
-	var currentScripts []Script
-
-	// Load scripts function
-	loadScripts := func() {
-		gistURL := strings.TrimSpace(gistURLEntry.Text)
-		if gistURL == "" {
-			dialog.ShowInformation("Error", "Please enter a valid gist URL", parentWindow)
-			return
+	// Scripts dropdown selector
+	scriptsSelect := widget.NewSelect([]string{}, func(selected string) {
+		// Find the selected script and load its content
+		for _, script := range currentScripts {
+			if fmt.Sprintf("%s - %s", script.Name, script.Description) == selected {
+				scriptInput.SetText(script.Content)
+				break
+			}
 		}
+	})
+	scriptsSelect.PlaceHolder = "Select a script template..."
 
+	// Load scripts from fixed GitHub URL
+	loadScripts := func() {
 		// Show loading indicator
 		progress := dialog.NewCustomWithoutButtons("Loading Scripts", widget.NewProgressBarInfinite(), parentWindow)
 		progress.Show()
@@ -656,7 +658,7 @@ func createScriptAutofillSection(scriptInput *widget.Entry, parentWindow fyne.Wi
 		go func() {
 			defer progress.Hide()
 
-			collection, err := loadScriptsFromGist(gistURL)
+			collection, err := loadScriptsFromGist(githubScriptURL)
 			if err != nil {
 				fyne.Do(func() {
 					dialog.ShowError(fmt.Errorf("failed to load scripts: %v", err), parentWindow)
@@ -675,74 +677,42 @@ func createScriptAutofillSection(scriptInput *widget.Entry, parentWindow fyne.Wi
 
 			currentScripts = filteredScripts
 
-			// Update scripts list
-			scriptsList.Length = func() int { return len(currentScripts) }
-			scriptsList.CreateItem = func() fyne.CanvasObject {
-				nameLabel := widget.NewLabel("")
-				nameLabel.TextStyle.Bold = true
-				descLabel := widget.NewLabel("")
-				descLabel.Wrapping = fyne.TextWrapWord
-
-				return container.NewVBox(
-					nameLabel,
-					descLabel,
-					widget.NewSeparator(),
-				)
-			}
-			scriptsList.UpdateItem = func(id widget.ListItemID, obj fyne.CanvasObject) {
-				if id < len(currentScripts) {
-					script := currentScripts[id]
-					container := obj.(*fyne.Container)
-					nameLabel := container.Objects[0].(*widget.Label)
-					descLabel := container.Objects[1].(*widget.Label)
-
-					nameLabel.SetText(fmt.Sprintf("%s [%s]", script.Name, script.Category))
-					descLabel.SetText(script.Description)
+			// Update scripts dropdown options
+			fyne.Do(func() {
+				var scriptOptions []string
+				for _, script := range currentScripts {
+					scriptOptions = append(scriptOptions, fmt.Sprintf("%s - %s", script.Name, script.Description))
 				}
-			}
+				scriptsSelect.Options = scriptOptions
+				scriptsSelect.Refresh()
 
-			scriptsList.OnSelected = func(id widget.ListItemID) {
-				if id < len(currentScripts) {
-					script := currentScripts[id]
-					// Fill the script content into the input
-					scriptInput.SetText(script.Content)
+				if len(scriptOptions) > 0 {
+					scriptsSelect.PlaceHolder = fmt.Sprintf("Select from %d available scripts...", len(scriptOptions))
+				} else {
+					scriptsSelect.PlaceHolder = "No scripts found for this category..."
 				}
-			}
-
-			scriptsList.Refresh()
+			})
 		}()
 	}
 
 	// Load button
-	loadBtn := widget.NewButtonWithIcon("Load Scripts", theme.DownloadIcon(), loadScripts)
+	loadBtn := widget.NewButtonWithIcon("Reload Scripts", theme.DownloadIcon(), loadScripts)
 
 	// Category change handler
 	categorySelect.OnChanged = func(selected string) {
-		if len(currentScripts) > 0 {
-			// Re-filter and update the list
-			loadScripts()
-		}
+		loadScripts()
 	}
 
-	// Create the autofill section
+	// Create the autofill section (no URL input)
 	autofillSection := container.NewVBox(
 		widget.NewCard("Script Templates", "",
 			container.NewVBox(
-				container.NewGridWithColumns(2,
-					container.NewBorder(
-						nil, nil, widget.NewLabel("Gist URL:"), nil,
-						gistURLEntry,
-					),
-					container.NewBorder(nil, nil, nil, loadBtn, nil),
+				container.NewGridWithColumns(1,
+					container.NewBorder(nil, nil, nil, loadBtn, categorySelect),
 				),
-				container.NewHBox(
-					widget.NewLabel("Category:"),
-					categorySelect,
-				),
-				container.NewBorder(
-					widget.NewLabel("Available Scripts (click to load):"),
-					nil, nil, nil,
-					container.NewVScroll(scriptsList),
+				container.NewVBox(
+					widget.NewLabel("Available Scripts:"),
+					scriptsSelect,
 				),
 			),
 		),
@@ -764,6 +734,7 @@ func showScriptDialog(connections []*pssh.SSHConnection, parent fyne.Window, app
 	autofillSection := createScriptAutofillSection(scriptInput, parent)
 
 	// Toggle button for autofill section
+	var autofillLoaded bool
 	var toggleAutofillBtn *widget.Button
 	toggleAutofillBtn = widget.NewButtonWithIcon("Show Templates", theme.FolderOpenIcon(), func() {
 		if autofillSection.Visible() {
@@ -774,6 +745,28 @@ func showScriptDialog(connections []*pssh.SSHConnection, parent fyne.Window, app
 			autofillSection.Show()
 			toggleAutofillBtn.SetText("Hide Templates")
 			toggleAutofillBtn.SetIcon(theme.FolderIcon())
+			if !autofillLoaded {
+				// Load scripts only the first time shown
+				for _, obj := range autofillSection.Objects {
+					if card, ok := obj.(*widget.Card); ok {
+						for _, inner := range card.Content.(*fyne.Container).Objects {
+							if grid, ok := inner.(*fyne.Container); ok {
+								for _, gobj := range grid.Objects {
+									if border, ok := gobj.(*fyne.Container); ok {
+										for _, bobj := range border.Objects {
+											if loadBtn, ok := bobj.(*widget.Button); ok {
+												loadBtn.OnTapped()
+												autofillLoaded = true
+												break
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
 		}
 	})
 
